@@ -349,7 +349,7 @@ export function TerminalView({
           />
         </div>
 
-        <div className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:sticky xl:top-11 xl:max-h-[calc(100dvh-108px)] xl:overflow-y-auto xl:border-l xl:border-border panel-scroll">
+        <div className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:max-h-[calc(100dvh-96px)] xl:overflow-y-auto xl:border-l xl:border-border panel-scroll">
           <ExecutionPanel
             token={tokenRef}
             market={market}

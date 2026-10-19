@@ -482,7 +482,7 @@ function TradeHistory({ trades }: { trades: ReturnType<typeof usePaperStore.getS
                 {trade.realizedPnl == null ? "—" : formatQuote(trade.realizedPnl, trade.quote)}
               </td>
               <td className="num border-b border-border/60 py-1 pl-2 pr-3 text-right text-2xs text-fg">
-                {formatQuote(trade.total, trade.quote)} {trade.quote}
+                {formatQuote(trade.total, trade.quote)}
               </td>
             </tr>
           ))}
