@@ -24,6 +24,10 @@ export interface Position {
   updatedAt: number;
   lastPriceQuote: number;
   lastPriceAt: number;
+  /** Take-profit trigger in the account's quote currency (null = off). */
+  takeProfitPrice?: number | null;
+  /** Stop-loss trigger in the account's quote currency (null = off). */
+  stopLossPrice?: number | null;
 }
 
 export interface Trade {
@@ -44,6 +48,8 @@ export interface Trade {
   realizedPnl: number | null;
   at: number;
   orderId?: string;
+  /** Why the fill happened. Manual orders and limit fills are the default. */
+  trigger?: "manual" | "limit" | "take-profit" | "stop-loss";
 }
 
 export type LimitOrderStatus = "open" | "filled" | "cancelled" | "failed";
@@ -127,6 +133,11 @@ export interface SellPlan {
   at: number;
   feeRateBps: number;
   slippageBps: number;
+}
+
+export interface ProtectionLevels {
+  takeProfitPrice: number | null;
+  stopLossPrice: number | null;
 }
 
 export interface BuyInput {

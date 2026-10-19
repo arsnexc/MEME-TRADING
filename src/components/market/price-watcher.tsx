@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { fetchTokenClient } from "@/lib/market-data/client";
+import { fetchQuotesClient } from "@/lib/market-data/client";
 import type { PriceTick } from "@/lib/trading/types";
-import { selectOpenOrderTokens, useMarketStore } from "@/stores/market";
+import { selectWatchedTokens, useMarketStore } from "@/stores/market";
 import { usePaperStore } from "@/stores/paper-trading";
 import { useHydrated } from "@/stores/hydration";
 import { toast } from "@/stores/toast";
@@ -11,17 +11,19 @@ import { toast } from "@/stores/toast";
 const POLL_INTERVAL_MS = 25_000;
 
 /**
- * Background limit-order watcher.
+ * Background price watcher.
  *
- * While limit orders are open, this polls the selected tokens (max 5) through
- * the same market-data pipeline as the terminal and feeds fresh prices to the
- * paper engine. Orders only execute on fresh provider prices — never on stale
- * snapshots or synthetic data.
+ * Polls tokens that have work pending: resting limit orders and positions with a
+ * take-profit or stop-loss level (max 8 tokens). Prices are fetched through the
+ * batched quotes endpoint — one upstream request per network for every watched
+ * token — and fed to the paper engine, so triggers only fire on fresh provider
+ * data and never on stale snapshots or synthetic candles.
  */
 export function PriceWatcher() {
   const hydrated = useHydrated();
   const orders = usePaperStore((state) => state.orders);
-  const tokens = useMemo(() => selectOpenOrderTokens({ orders }), [orders]);
+  const positions = usePaperStore((state) => state.positions);
+  const tokens = useMemo(() => selectWatchedTokens({ orders, positions }), [orders, positions]);
   const key = tokens.map((t) => `${t.network}:${t.pool}`).join("|");
   const processTicks = usePaperStore((state) => state.processTicks);
   const updateSnapshots = useMarketStore((state) => state.upsertTokens);
@@ -36,59 +38,64 @@ export function PriceWatcher() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let running = false;
-    const controllers = new Set<AbortController>();
+    let controller: AbortController | null = null;
 
     const run = async () => {
-      if (cancelled || running || document.hidden) return schedule();
+      if (cancelled || running) return schedule();
+      if (document.hidden) return schedule();
       running = true;
       const list = tokensRef.current;
+      controller = new AbortController();
       try {
-        for (const token of list) {
-          if (cancelled) break;
-          const controller = new AbortController();
-          controllers.add(controller);
-          try {
-            const result = await fetchTokenClient({
-              network: token.network,
-              pool: token.pool,
-              token: token.address,
-              signal: controller.signal,
-            });
-            if (cancelled) break;
-            const { data } = result;
-            setQuotePrices(data.quotePrices);
-            updateSnapshots([data.market]);
-            const quotePrice = data.quotePrices[data.market.quote]?.usd;
-            if (!data.market.priceUsd || !quotePrice) continue;
-            const tick: PriceTick = {
-              network: data.market.network,
-              address: data.market.tokenAddress,
-              pool: data.market.pool,
-              priceUsd: data.market.priceUsd,
-              quoteUsd: quotePrice,
-              at: Date.now(),
-            };
-            const outcome = processTicks([tick]);
-            for (const trade of outcome.fills) {
-              toast({
-                title: `Limit ${trade.side} filled · ${trade.token.symbol}`,
-                description: `${trade.quantity.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${trade.token.symbol} at ${trade.priceQuote.toLocaleString("en-US", { maximumFractionDigits: 8 })} ${trade.quote}`,
-                variant: "success",
-              });
-            }
-            for (const failure of outcome.failures) {
-              toast({
-                title: `Limit order failed · ${failure.token.symbol}`,
-                description: failure.failureReason ?? "The order could not be executed.",
-                variant: "error",
-              });
-            }
-          } catch {
-            // Individual token failures are surfaced by the terminal; the watcher retries next cycle.
-          } finally {
-            controllers.delete(controller);
-          }
+        const result = await fetchQuotesClient({
+          refs: list.map((token) => ({ network: token.network, pool: token.pool })),
+          signal: controller.signal,
+        });
+        if (cancelled) return;
+
+        const { tokens: quotes, quotePrices } = result.data;
+        setQuotePrices(quotePrices);
+        if (quotes.length > 0) updateSnapshots(quotes);
+
+        const byPool = new Map(quotes.map((quote) => [`${quote.network}:${quote.pool}`, quote]));
+        const ticks: PriceTick[] = [];
+        for (const watch of list) {
+          const quote = byPool.get(`${watch.network}:${watch.pool}`);
+          if (!quote?.priceUsd) continue;
+          const quoteUsd = quotePrices[quote.quote]?.usd;
+          if (!quoteUsd) continue;
+          ticks.push({
+            network: quote.network,
+            address: quote.tokenAddress,
+            pool: quote.pool,
+            priceUsd: quote.priceUsd,
+            quoteUsd,
+            at: result.receivedAt,
+          });
         }
+
+        const outcome = processTicks(ticks);
+        for (const trade of outcome.fills) {
+          const automatic =
+            trade.trigger === "take-profit" ? "Take profit" : trade.trigger === "stop-loss" ? "Stop loss" : null;
+          toast({
+            title: automatic
+              ? `${automatic} triggered · ${trade.token.symbol}`
+              : `Limit ${trade.side} filled · ${trade.token.symbol}`,
+            description: `Sold ${trade.quantity.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${trade.token.symbol} at ${trade.priceQuote.toLocaleString("en-US", { maximumFractionDigits: 8 })} ${trade.quote}${trade.realizedPnl == null ? "" : ` · realized ${trade.realizedPnl.toFixed(5)} ${trade.quote}`}`,
+            variant: automatic === "Stop loss" ? "error" : "success",
+          });
+        }
+        for (const failure of outcome.failures) {
+          toast({
+            title: `Limit order failed · ${failure.token.symbol}`,
+            description: failure.failureReason ?? "The order could not be executed.",
+            variant: "error",
+          });
+        }
+      } catch {
+        // Provider failures are surfaced by the terminal and portfolio; the
+        // watcher simply retries next cycle.
       } finally {
         running = false;
         schedule();
@@ -116,7 +123,7 @@ export function PriceWatcher() {
       if (timer) clearTimeout(timer);
       clearTimeout(initial);
       document.removeEventListener("visibilitychange", onVisibility);
-      for (const controller of controllers) controller.abort();
+      controller?.abort();
     };
   }, [hydrated, key, processTicks, setQuotePrices, updateSnapshots]);
 

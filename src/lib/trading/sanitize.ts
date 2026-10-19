@@ -98,6 +98,14 @@ function sanitizePosition(value: unknown): Position | null {
     ? normalizedCostBasis
     : d(costBasis);
 
+  // Protection levels are optional and additive; older snapshots simply have
+  // none. A level on the wrong side of entry is discarded rather than throwing
+  // the whole position away.
+  const rawTakeProfit = isPositiveFinite(value.takeProfitPrice) ? d(value.takeProfitPrice) : null;
+  const rawStopLoss = isPositiveFinite(value.stopLossPrice) ? d(value.stopLossPrice) : null;
+  const takeProfitPrice = rawTakeProfit != null && rawTakeProfit > avgEntryPrice ? rawTakeProfit : null;
+  const stopLossPrice = rawStopLoss != null && rawStopLoss < avgEntryPrice ? rawStopLoss : null;
+
   return {
     id,
     token,
@@ -111,6 +119,8 @@ function sanitizePosition(value: unknown): Position | null {
     updatedAt,
     lastPriceQuote: d(value.lastPriceQuote),
     lastPriceAt: safeTimestamp(lastPriceAt) ?? updatedAt,
+    takeProfitPrice,
+    stopLossPrice,
   };
 }
 

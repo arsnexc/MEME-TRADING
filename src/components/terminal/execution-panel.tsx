@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Info, Lock, RefreshCw, Wallet } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, Lock, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,6 +77,9 @@ export function ExecutionPanel({
   const [amountInput, setAmountInput] = useState("");
   const [limitPriceInput, setLimitPriceInput] = useState("");
   const [priorityFeeInput, setPriorityFeeInput] = useState("");
+  const [protectionOpen, setProtectionOpen] = useState(false);
+  const [takeProfitPctInput, setTakeProfitPctInput] = useState("");
+  const [stopLossPctInput, setStopLossPctInput] = useState("");
   const [feePercentInput, setFeePercentInput] = useState((feeRateBps / 100).toString());
   const [message, setMessage] = useState<{ kind: "success" | "error" | "info"; text: string; detail?: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -90,6 +93,20 @@ export function ExecutionPanel({
   const limitPrice = parseAmountInput(limitPriceInput, { maxDecimals: 12 });
   const priorityFee = priorityFeeInput.trim() === "" ? 0 : Number(priorityFeeInput);
   const priorityFeeValid = Number.isFinite(priorityFee) && priorityFee >= 0;
+
+  const protectionAvailable = side === "buy" && orderType !== "limit";
+  const takeProfitPct = takeProfitPctInput.trim() === "" ? null : Number(takeProfitPctInput);
+  const stopLossPct = stopLossPctInput.trim() === "" ? null : Number(stopLossPctInput);
+  const takeProfitValid = takeProfitPct == null || (Number.isFinite(takeProfitPct) && takeProfitPct > 0);
+  const stopLossValid = stopLossPct == null || (Number.isFinite(stopLossPct) && stopLossPct > 0 && stopLossPct < 100);
+  const hasProtection = protectionAvailable && (takeProfitPct != null || stopLossPct != null);
+  const protectionPreview =
+    referencePrice && hasProtection
+      ? {
+          takeProfit: takeProfitValid && takeProfitPct != null ? referencePrice * (1 + takeProfitPct / 100) : null,
+          stopLoss: stopLossValid && stopLossPct != null ? referencePrice * (1 - stopLossPct / 100) : null,
+        }
+      : null;
 
   const windowStats = useMemo(() => {
     const cutoff = now - 300_000;
@@ -217,6 +234,8 @@ export function ExecutionPanel({
         return `Quantity exceeds your remaining ${formatTokenAmount(position.quantity, 6)} ${token.symbol}.`;
       }
     }
+    if (protectionAvailable && !takeProfitValid) return "Take profit must be a positive percentage, or left blank.";
+    if (protectionAvailable && !stopLossValid) return "Stop loss must be between 0 and 100%, or left blank.";
     return null;
   })();
 
@@ -230,6 +249,9 @@ export function ExecutionPanel({
     setAmountInput("");
     setLimitPriceInput("");
     setPriorityFeeInput("");
+    setTakeProfitPctInput("");
+    setStopLossPctInput("");
+    setProtectionOpen(false);
   };
 
   const execute = async () => {
@@ -278,6 +300,8 @@ export function ExecutionPanel({
           priceUsd: market.priceUsd,
           quoteUsd,
           priorityFeeQuote: orderType === "advanced" ? priorityFee : 0,
+          takeProfitPct: protectionAvailable && takeProfitValid ? takeProfitPct : null,
+          stopLossPct: protectionAvailable && stopLossValid ? stopLossPct : null,
         });
         if (!result.ok) {
           setMessage({ kind: "error", text: result.error.message });
@@ -285,10 +309,14 @@ export function ExecutionPanel({
           return;
         }
         const plan = result.value.plan as BuyPlan;
+        const protectionNote =
+          hasProtection && protectionPreview
+            ? ` · ${protectionPreview.takeProfit ? `TP ${formatQuotePrice(protectionPreview.takeProfit)}` : ""}${protectionPreview.takeProfit && protectionPreview.stopLoss ? " · " : ""}${protectionPreview.stopLoss ? `SL ${formatQuotePrice(protectionPreview.stopLoss)}` : ""}`
+            : "";
         setMessage({
           kind: "success",
           text: `Filled: bought ${formatTokenAmount(result.value.trade.quantity, 4)} ${token.symbol}`,
-          detail: `${formatQuote(plan.notional, quote)} notional · fee ${formatQuote(plan.fee, quote, 5)} · total ${formatQuote(plan.totalDebit, quote, 5)} · avg fill ${formatQuotePrice(plan.fillPrice)} ${quote} · simulated ${new Date(plan.at).toLocaleTimeString("en-GB", { hour12: false })}`,
+          detail: `${formatQuote(plan.notional, quote)} notional · fee ${formatQuote(plan.fee, quote, 5)} · total ${formatQuote(plan.totalDebit, quote, 5)} · avg fill ${formatQuotePrice(plan.fillPrice)} ${quote}${protectionNote} · simulated ${new Date(plan.at).toLocaleTimeString("en-GB", { hour12: false })}`,
         });
         toast({
           title: `Paper buy filled · ${token.symbol}`,
@@ -346,7 +374,7 @@ export function ExecutionPanel({
     <aside className="flex min-h-0 flex-col border-border bg-panel/30 xl:border-l" aria-label="Paper order execution">
       <div className="border-b border-border px-2.5 py-2">
         <div className="flex items-center justify-between">
-          <p className="text-2xs font-semibold uppercase tracking-wide text-muted">Trade · paper</p>
+          <p className="text-2xs font-semibold uppercase tracking-wide text-muted">Buy / sell · simulated</p>
           <Tooltip content="Orders are simulated locally. No wallet is connected and no transaction is signed or broadcast.">
             <Badge tone="warn" className="gap-1">
               <Lock className="h-2.5 w-2.5" /> simulated
@@ -407,9 +435,16 @@ export function ExecutionPanel({
           />
           <span className="ml-auto inline-flex items-center gap-1 text-2xs text-faint">
             <Wallet className="h-2.5 w-2.5" />
-            {hydrated ? `${formatQuote(balance, quote)} available` : "restoring…"}
+            {hydrated ? `${formatQuote(balance, quote)} cash` : "restoring…"}
           </span>
         </div>
+        <p className="mt-1 text-2xs leading-relaxed text-faint">
+          {orderType === "market"
+            ? "Buys or sells now at the live price, adjusted by your slippage setting."
+            : orderType === "limit"
+              ? "Waits until the market reaches your price. Checked only while this site is open."
+              : "Like a market order, but you choose the fee and priority fee to test different costs."}
+        </p>
       </div>
 
       <div className="border-b border-border px-2.5 py-1.5">
@@ -509,7 +544,7 @@ export function ExecutionPanel({
               type="button"
               onClick={side === "buy" ? maxBuy : () => position && setAmountInput(formatInputValue(position.quantity, 6))}
               disabled={side === "sell" && !position}
-              className="h-5 rounded-[2px] border border-accent/30 bg-accent/10 px-1.5 text-2xs text-[#9aa6ff] disabled:opacity-30"
+              className="h-5 rounded-[2px] border border-accent/30 bg-accent/10 px-1.5 text-2xs text-[#f5f5f5] disabled:opacity-30"
             >
               MAX
             </button>
@@ -594,6 +629,87 @@ export function ExecutionPanel({
           </div>
         ) : null}
 
+        {protectionAvailable ? (
+          <div className="rounded-sm border border-border bg-panel-2/40">
+            <button
+              type="button"
+              onClick={() => setProtectionOpen((value) => !value)}
+              aria-expanded={protectionOpen}
+              className="flex w-full items-center justify-between px-2 py-1.5 text-2xs"
+            >
+              <span className="inline-flex items-center gap-1 text-muted">
+                <ShieldCheck className="h-3 w-3" /> Protect this trade
+                {hasProtection ? <Badge tone="green">on</Badge> : <span className="text-faint">optional</span>}
+              </span>
+              <span className="text-faint">{protectionOpen ? "hide" : "set auto-exit"}</span>
+            </button>
+            {protectionOpen ? (
+              <div className="space-y-2 border-t border-border px-2 py-2">
+                <p className="text-2xs leading-relaxed text-faint">
+                  Automatically sells the whole position when the price crosses a level. Levels are set from the estimated
+                  fill price and can be changed or removed later in the positions table.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-2xs text-faint" htmlFor="tp-pct">
+                    Take profit %
+                    <Input
+                      id="tp-pct"
+                      value={takeProfitPctInput}
+                      onChange={(event) => setTakeProfitPctInput(event.target.value.replace(/[^\d.]/g, ""))}
+                      inputMode="decimal"
+                      placeholder="e.g. 50"
+                      className={cn("mt-0.5 h-6 text-2xs", !takeProfitValid && "border-sell/60")}
+                    />
+                  </label>
+                  <label className="text-2xs text-faint" htmlFor="sl-pct">
+                    Stop loss %
+                    <Input
+                      id="sl-pct"
+                      value={stopLossPctInput}
+                      onChange={(event) => setStopLossPctInput(event.target.value.replace(/[^\d.]/g, ""))}
+                      inputMode="decimal"
+                      placeholder="e.g. 20"
+                      className={cn("mt-0.5 h-6 text-2xs", !stopLossValid && "border-sell/60")}
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {[25, 50, 100].map((pct) => (
+                    <button
+                      key={`tp-${pct}`}
+                      type="button"
+                      onClick={() => setTakeProfitPctInput(String(pct))}
+                      className="h-5 rounded-[2px] border border-border bg-panel-2 px-1.5 text-2xs text-muted hover:text-fg"
+                    >
+                      TP +{pct}%
+                    </button>
+                  ))}
+                  {[10, 25, 50].map((pct) => (
+                    <button
+                      key={`sl-${pct}`}
+                      type="button"
+                      onClick={() => setStopLossPctInput(String(pct))}
+                      className="h-5 rounded-[2px] border border-border bg-panel-2 px-1.5 text-2xs text-muted hover:text-fg"
+                    >
+                      SL −{pct}%
+                    </button>
+                  ))}
+                </div>
+                {protectionPreview && (protectionPreview.takeProfit || protectionPreview.stopLoss) ? (
+                  <p className="num text-2xs text-faint">
+                    {protectionPreview.takeProfit ? `TP ≈ ${formatQuotePrice(protectionPreview.takeProfit)} ${quote}` : ""}
+                    {protectionPreview.takeProfit && protectionPreview.stopLoss ? " · " : ""}
+                    {protectionPreview.stopLoss ? `SL ≈ ${formatQuotePrice(protectionPreview.stopLoss)} ${quote}` : ""}
+                    <span className="text-faint"> (from the live price, before slippage)</span>
+                  </p>
+                ) : null}
+                {!takeProfitValid ? <p className="text-2xs text-sell">Take profit must be a positive percentage.</p> : null}
+                {!stopLossValid ? <p className="text-2xs text-sell">Stop loss must be between 0 and 100%.</p> : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {side === "sell" && position && unrealized ? (
           <div className="rounded-sm border border-border bg-panel-2/50 p-2 text-2xs">
             <div className="flex justify-between text-faint">
@@ -617,7 +733,7 @@ export function ExecutionPanel({
           </div>
         ) : null}
 
-        <div className="rounded-sm border border-border bg-[#0d121d] p-2">
+        <div className="rounded-sm border border-border bg-[#0a0a0a] p-2">
           <div className="flex items-center justify-between">
             <span className="text-2xs font-medium text-muted">Order preview</span>
             <span className="text-2xs text-faint">
@@ -697,7 +813,7 @@ export function ExecutionPanel({
               "rounded-sm border px-2 py-1.5 text-2xs",
               message.kind === "success" && "border-buy/30 bg-buy/5 text-buy",
               message.kind === "error" && "border-sell/30 bg-sell/5 text-sell",
-              message.kind === "info" && "border-accent/30 bg-accent/5 text-[#9aa6ff]",
+              message.kind === "info" && "border-accent/30 bg-accent/5 text-[#f5f5f5]",
             )}
           >
             <div className="flex items-center gap-1 font-medium">
@@ -712,7 +828,7 @@ export function ExecutionPanel({
           variant={side === "buy" ? "buy" : "sell"}
           size="lg"
           className="w-full text-xs font-semibold"
-          disabled={Boolean(validation) || submitting || !hydrated}
+          disabled={Boolean(validation) || submitting || !hydrated || !takeProfitValid || !stopLossValid}
           onClick={() => void execute()}
           aria-busy={submitting}
         >

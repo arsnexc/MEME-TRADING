@@ -2,9 +2,9 @@ import { NETWORKS, type NetworkId } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 const TONE: Record<NetworkId, string> = {
-  solana: "border-[#9945FF]/30 bg-[#9945FF]/10 text-[#c9a6ff]",
-  eth: "border-[#627EEA]/30 bg-[#627EEA]/10 text-[#aab8ff]",
-  base: "border-[#0052FF]/35 bg-[#0052FF]/10 text-[#8fb3ff]",
+  solana: "border-border-strong bg-panel-3 text-fg",
+  eth: "border-border bg-panel-2 text-muted",
+  base: "border-border bg-panel-2 text-faint",
 };
 
 export function NetworkBadge({ network, className }: { network: NetworkId; className?: string }) {

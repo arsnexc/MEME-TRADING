@@ -24,6 +24,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
 import { RetryCountdown } from "@/components/ui/retry-countdown";
+import { StartHere } from "@/components/layout/start-here";
 import { useNow } from "@/hooks/use-now";
 import { usePollingQuery } from "@/hooks/use-polling-query";
 import {
@@ -46,9 +47,9 @@ import { toast } from "@/stores/toast";
 const PAGE_SIZE = 25;
 
 const TAB_HINTS: Partial<Record<DiscoveryTab, string>> = {
-  top: "Curated trending pools re-ranked by 24h volume. The public API does not expose an all-market ranking.",
-  trending: "GeckoTerminal's curated trending pools for each supported network.",
-  radar: "Newly created pools, newest first. New pools carry extreme risk and usually have no price history.",
+  top: "Trending pools re-ranked by 24h volume. The public API does not expose an all-market ranking.",
+  trending: "Pools GeckoTerminal is tracking as hot on each network right now.",
+  radar: "Brand-new pools, newest first. Extreme risk and usually no price history.",
   callouts: "Private notes saved in this browser only.",
   streamers: "No verified streamer feed is connected in this build.",
 };
@@ -199,6 +200,8 @@ export function DiscoveryView() {
         </div>
       </div>
 
+      <StartHere />
+
       <div className="flex items-center gap-1 overflow-x-auto border-b border-border px-2.5 panel-scroll" role="tablist" aria-label="Discovery sections">
         {DISCOVERY_TABS.map((item) => {
           const active = tab === item.value;
@@ -218,7 +221,7 @@ export function DiscoveryView() {
             >
               {item.label}
               {item.badge ? (
-                <span className="rounded-[2px] border border-accent/40 bg-accent/10 px-1 py-px text-[8px] font-bold tracking-wide text-[#9aa6ff]">
+                <span className="rounded-[2px] border border-accent/40 bg-accent/10 px-1 py-px text-[8px] font-bold tracking-wide text-[#f5f5f5]">
                   {item.badge}
                 </span>
               ) : null}

@@ -2,17 +2,18 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Info, Wallet } from "lucide-react";
+import { Info, ShieldCheck, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NetworkBadge } from "@/components/ui/network-badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { TokenAvatar } from "@/components/token/token-avatar";
-import { computeUnrealized } from "@/lib/trading/engine";
+import { computeUnrealized, protectionPercent } from "@/lib/trading/engine";
 import type { Position, TokenRef } from "@/lib/trading/types";
 import { formatPercent, formatQuote, formatQuotePrice, formatRelativeTime, formatTokenAmount, pnlClass } from "@/lib/formatting";
 import { cn, truncateMiddle } from "@/lib/utils";
+import { ProtectionDialog } from "./protection-dialog";
 
 export interface PositionPrice {
   priceUsd: number | null;
@@ -39,6 +40,7 @@ export function PositionsTable({
   onSell: (position: Position, fraction: number) => Promise<void>;
 }) {
   const [selling, setSelling] = useState<string | null>(null);
+  const [protecting, setProtecting] = useState<string | null>(null);
 
   if (!hydrated) {
     return (
@@ -71,6 +73,8 @@ export function PositionsTable({
     }
     return b.updatedAt - a.updatedAt;
   });
+
+  const protectedPosition = protecting ? positions.find((position) => position.id === protecting) ?? null : null;
 
   const totals = sorted.reduce(
     (acc, position) => {
@@ -114,7 +118,7 @@ export function PositionsTable({
         <table className="w-full min-w-[980px] border-separate border-spacing-0" aria-label="Open paper positions">
           <thead className="bg-panel">
             <tr className="text-2xs uppercase tracking-wide text-faint">
-              {["Token", "Entry", "Current", "Size", "Remaining", "Realized", "Unrealized", "Fees", "Return", "Opened", "Actions"].map(
+              {["Token", "Entry", "Current", "Size", "Remaining", "Auto exit", "Realized", "Unrealized", "Fees", "Return", "Opened", "Actions"].map(
                 (heading) => (
                   <th
                     key={heading}
@@ -172,6 +176,41 @@ export function PositionsTable({
                   <td className="num px-2 py-1.5 text-right text-xs text-muted">
                     <span className="block">{formatTokenAmount(position.quantity, 6)}</span>
                     <span className="block text-2xs text-faint">{position.token.symbol}</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setProtecting(position.id)}
+                      aria-label={`Set take profit and stop loss for ${position.token.symbol}`}
+                      className="inline-flex flex-col items-end gap-0.5 text-2xs transition-colors hover:text-fg"
+                    >
+                      {position.takeProfitPrice == null && position.stopLossPrice == null ? (
+                        <span className="inline-flex items-center gap-1 text-faint">
+                          <ShieldCheck className="h-2.5 w-2.5" /> set
+                        </span>
+                      ) : (
+                        <>
+                          <span className="num text-buy">
+                            TP {position.takeProfitPrice == null ? "—" : formatQuotePrice(position.takeProfitPrice)}
+                            {position.takeProfitPrice != null ? (
+                              <span className="text-faint">
+                                {" "}
+                                ({formatPercent(protectionPercent(position.avgEntryPrice, position.takeProfitPrice) ?? 0)})
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="num text-sell">
+                            SL {position.stopLossPrice == null ? "—" : formatQuotePrice(position.stopLossPrice)}
+                            {position.stopLossPrice != null ? (
+                              <span className="text-faint">
+                                {" "}
+                                ({formatPercent(protectionPercent(position.avgEntryPrice, position.stopLossPrice) ?? 0)})
+                              </span>
+                            ) : null}
+                          </span>
+                        </>
+                      )}
+                    </button>
                   </td>
                   <td className={cn("num px-2 py-1.5 text-right text-xs", pnlClass(position.realizedPnl))}>
                     {position.realizedPnl === 0 ? "—" : formatQuote(position.realizedPnl, position.quote)}
@@ -235,10 +274,19 @@ export function PositionsTable({
         </table>
       </div>
       <p className="border-t border-border px-3 py-1.5 text-2xs text-faint">
-        Weighted-average cost basis. Entry fees are expensed separately; unrealized PnL subtracts an estimated exit fee.
-        Values are shown in each position&apos;s account currency (SOL or ETH). Partial sells preserve remaining basis and
-        quantity.
+        Cost basis is the weighted average you paid. Fees are tracked separately and unrealized PnL already subtracts an
+        estimated exit fee. Each position settles in its own currency (SOL or ETH). Click <span className="text-muted">Auto
+        exit</span> to add a take-profit or stop-loss that sells the whole position for you.
       </p>
+      {protectedPosition ? (
+        <ProtectionDialog
+          position={protectedPosition}
+          open
+          onOpenChange={(open) => {
+            if (!open) setProtecting(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

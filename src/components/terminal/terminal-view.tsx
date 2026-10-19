@@ -319,6 +319,8 @@ export function TerminalView({
             paperTrades={paperTrades}
             lastUpdated={chartQuery.lastUpdated}
             stale={Boolean(chartQuery.error && chartCandles.length > 0)}
+            livePrice={market?.priceUsd ?? null}
+            livePriceAt={marketQuery.lastUpdated}
           />
         </div>
 

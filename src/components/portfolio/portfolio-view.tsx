@@ -275,7 +275,7 @@ export function PortfolioView() {
                   <span
                     className={cn(
                       "flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold",
-                      quote === "SOL" ? "bg-[#9945FF]/15 text-[#c49cff]" : "bg-[#627EEA]/15 text-[#a6b7ff]",
+                      quote === "SOL" ? "bg-[#e5e5e5]/15 text-[#d4d4d4]" : "bg-[#a3a3a3]/15 text-[#d4d4d4]",
                     )}
                   >
                     {quote}
@@ -288,27 +288,34 @@ export function PortfolioView() {
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Metric
-                  label="Equity"
+                  label="Total value"
                   value={`${formatQuote(equity, quote)} ${quote}`}
-                  sub={account.usdValue != null ? `≈ $${account.usdValue.toFixed(2)}` : "USD reference unavailable"}
+                  sub={`cash + positions${account.usdValue != null ? ` · ≈ $${account.usdValue.toFixed(2)}` : ""}`}
                 />
                 <Metric
-                  label="Return"
-                  value={formatPercent(returnPct, { sign: true })}
-                  tone={returnPct >= 0 ? "buy" : "sell"}
-                  sub={`started ${formatQuote(account.initial, quote, 0)} ${quote}`}
+                  label="Cash"
+                  value={`${formatQuote(account.free, quote)} ${quote}`}
+                  sub="ready to spend"
                 />
-                <Metric label="Free" value={`${formatQuote(account.free, quote)} ${quote}`} sub="available to trade" />
                 <Metric
-                  label="Unrealized"
+                  label="In positions"
+                  value={`${formatQuote(account.value, quote)} ${quote}`}
+                  sub="current market value"
+                />
+                <Metric
+                  label="Open PnL"
                   value={formatQuote(account.unrealized, quote)}
                   tone={account.unrealized >= 0 ? "buy" : "sell"}
-                  sub="net of est. exit fee"
+                  sub="after est. exit fee"
                 />
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-faint">
                 <span>
-                  Position value <span className="num text-muted">{formatQuote(account.value, quote)} {quote}</span>
+                  Return since start{" "}
+                  <span className={cn("num", returnPct >= 0 ? "text-buy" : "text-sell")}>
+                    {formatPercent(returnPct, { sign: true })}
+                  </span>
+                  <span className="text-faint"> (from {formatQuote(account.initial, quote, 0)} {quote})</span>
                 </span>
                 <span>
                   Realized <span className={cn("num", pnlClass(account.realized))}>{formatQuote(account.realized, quote)} {quote}</span>
@@ -317,6 +324,11 @@ export function PortfolioView() {
                   Fees paid <span className="num text-muted">{formatQuote(account.fees, quote)} {quote}</span>
                 </span>
               </div>
+              <p className="mt-1 text-2xs leading-relaxed text-faint">
+                Buying moves cash into a position, so <span className="text-muted">cash drops</span> while{" "}
+                <span className="text-muted">total value stays about the same</span> — only fees and price moves change
+                it. Nothing leaves your account on a buy except the fee.
+              </p>
             </section>
           );
         })}
@@ -436,7 +448,15 @@ function TradeHistory({ trades }: { trades: ReturnType<typeof usePaperStore.getS
               <td className={cn("border-b border-border/60 px-2 py-1 text-2xs font-semibold uppercase", trade.side === "buy" ? "text-buy" : "text-sell")}>
                 {trade.side}
               </td>
-              <td className="border-b border-border/60 px-2 py-1 text-2xs text-muted">{trade.orderKind}</td>
+              <td className="border-b border-border/60 px-2 py-1 text-2xs text-muted">
+                {trade.trigger === "take-profit" ? (
+                  <Badge tone="green">take profit</Badge>
+                ) : trade.trigger === "stop-loss" ? (
+                  <Badge tone="red">stop loss</Badge>
+                ) : (
+                  trade.orderKind
+                )}
+              </td>
               <td className="num border-b border-border/60 px-2 py-1 text-right text-2xs text-fg">{formatTokenAmount(trade.quantity)}</td>
               <td className="num border-b border-border/60 px-2 py-1 text-right text-2xs text-fg">
                 {formatQuotePrice(trade.priceQuote)} {trade.quote}

@@ -46,6 +46,7 @@ import {
   type DisplayCurrency,
   type NetworkId,
 } from "@/lib/constants";
+import { TIMEFRAME_SECONDS, mergeLiveTick } from "@/lib/market-data/live-candle";
 import type { Candle, QuotePrices } from "@/lib/market-data/types";
 import type { Trade } from "@/lib/trading/types";
 import { formatCompact, formatNumber, formatPrice, formatUsdCompact, priceDecimalsFor, expandExponential } from "@/lib/formatting";
@@ -82,6 +83,8 @@ export function ChartPanel({
   paperTrades,
   lastUpdated,
   stale,
+  livePrice,
+  livePriceAt,
 }: {
   symbol: string;
   network: NetworkId;
@@ -98,6 +101,9 @@ export function ChartPanel({
   paperTrades: Trade[];
   lastUpdated: number | null;
   stale: boolean;
+  /** Latest provider price in USD. Drives the forming candle between polls. */
+  livePrice: number | null;
+  livePriceAt: number | null;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -164,25 +170,25 @@ export function ChartPanel({
     const chart = createChart(container, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#0a0e17" },
-        textColor: "#8993a7",
+        background: { type: ColorType.Solid, color: "#000000" },
+        textColor: "#a3a3a3",
         fontFamily:
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
         fontSize: 10,
         attributionLogo: true,
       },
       grid: {
-        vertLines: { color: "#141a28" },
-        horzLines: { color: "#141a28" },
+        vertLines: { color: "#171717" },
+        horzLines: { color: "#171717" },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "#394363", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1e2538" },
-        horzLine: { color: "#394363", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1e2538" },
+        vertLine: { color: "#3a3a3a", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#242424" },
+        horzLine: { color: "#3a3a3a", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#242424" },
       },
-      rightPriceScale: { borderColor: "#1e2538", scaleMargins: { top: 0.08, bottom: 0.24 } },
+      rightPriceScale: { borderColor: "#242424", scaleMargins: { top: 0.08, bottom: 0.24 } },
       timeScale: {
-        borderColor: "#1e2538",
+        borderColor: "#242424",
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 3,
@@ -196,11 +202,11 @@ export function ChartPanel({
     });
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#00e676",
-      downColor: "#ff1744",
+      upColor: "#22c55e",
+      downColor: "#ef4444",
       borderVisible: false,
-      wickUpColor: "#00e676",
-      wickDownColor: "#ff1744",
+      wickUpColor: "#22c55e",
+      wickDownColor: "#ef4444",
       priceLineVisible: true,
       lastValueVisible: true,
     });
@@ -255,8 +261,8 @@ export function ChartPanel({
     chart.applyOptions({
       crosshair: { mode: crosshairVisible ? CrosshairMode.Normal : CrosshairMode.Hidden },
       grid: {
-        vertLines: { color: showGrid ? "#141a28" : "transparent" },
-        horzLines: { color: showGrid ? "#141a28" : "transparent" },
+        vertLines: { color: showGrid ? "#171717" : "transparent" },
+        horzLines: { color: showGrid ? "#171717" : "transparent" },
       },
     });
     chart.priceScale("right").applyOptions({ mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal });
@@ -301,6 +307,46 @@ export function ChartPanel({
     }
   }, [candles, factor, timeframe, symbol, network, pool, effectiveCurrency]);
 
+  // Live tick: fold the newest provider price into the forming candle.
+  //
+  // The historical bars above come from GeckoTerminal. This effect only ever
+  // touches the bar that is still open (or opens the next bar with the previous
+  // close). It never invents history, and the next poll replaces it with the
+  // provider's own candle.
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    const volume = volumeSeriesRef.current;
+    if (!series || !volume) return;
+    if (livePrice == null || !Number.isFinite(livePrice) || livePrice <= 0) return;
+    // A price older than two minutes is not a live tick any more.
+    if (livePriceAt != null && Date.now() - livePriceAt > 120_000) return;
+    const last = candles[candles.length - 1];
+    if (!last) return;
+
+    const bar = mergeLiveTick({
+      last,
+      price: livePrice * factor,
+      tickMs: livePriceAt ?? Date.now(),
+      intervalSeconds: TIMEFRAME_SECONDS[timeframe],
+    });
+    if (!bar) return;
+
+    series.update({
+      time: bar.time as Time,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+    });
+    if (bar.openedNewBar) {
+      volume.update({
+        time: bar.time as Time,
+        value: 0,
+        color: bar.close >= bar.open ? "rgba(34, 197, 94, 0.22)" : "rgba(239, 68, 68, 0.22)",
+      });
+    }
+  }, [livePrice, livePriceAt, candles, factor, timeframe]);
+
   // Simulated execution markers (local paper trades only, never external wallets).
   useEffect(() => {
     const markers = markersRef.current;
@@ -319,7 +365,7 @@ export function ChartPanel({
       .map(({ trade, time }): SeriesMarker<Time> => ({
         time: time as Time,
         position: trade.side === "buy" ? "belowBar" : "aboveBar",
-        color: trade.side === "buy" ? "#00e676" : "#ff1744",
+        color: trade.side === "buy" ? "#22c55e" : "#ef4444",
         shape: trade.side === "buy" ? "arrowUp" : "arrowDown",
         text: trade.side === "buy" ? "B" : "S",
         size: 1,
@@ -363,7 +409,7 @@ export function ChartPanel({
     if (toolRef.current === "hline") {
       const line = series.createPriceLine({
         price,
-        color: "#596bff",
+        color: "#d4d4d4",
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
@@ -379,7 +425,7 @@ export function ChartPanel({
         removeMeasureLines();
         const line = series.createPriceLine({
           price,
-          color: "#596bff",
+          color: "#d4d4d4",
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: true,
@@ -390,7 +436,7 @@ export function ChartPanel({
       } else {
         const line = series.createPriceLine({
           price,
-          color: "#8993a7",
+          color: "#a3a3a3",
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: true,
@@ -468,6 +514,15 @@ export function ChartPanel({
         </div>
         <div className="ml-auto flex items-center gap-1">
           {fetching && !loading ? <Spinner className="text-faint" /> : null}
+          {livePrice != null && !stale && !error ? (
+            <span className="inline-flex items-center gap-1 text-2xs text-faint" title="The forming candle updates on every price tick">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-buy opacity-60" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-buy" />
+              </span>
+              live
+            </span>
+          ) : null}
           <span className={cn("hidden text-2xs sm:inline", stale ? "text-warn" : "text-faint")}>
             {error ? "chart error" : stale ? "stale data" : lastUpdated ? "GeckoTerminal OHLCV" : "loading"}
           </span>
@@ -521,7 +576,7 @@ export function ChartPanel({
           ) : null}
 
           {measure && measure.end != null && measurePct != null ? (
-            <div className="absolute right-2 top-2 z-10 flex items-center gap-2 rounded-sm border border-accent/40 bg-[#0d121d]/95 px-2 py-1 text-2xs shadow-lg">
+            <div className="absolute right-2 top-2 z-10 flex items-center gap-2 rounded-sm border border-accent/40 bg-[#0a0a0a]/95 px-2 py-1 text-2xs shadow-lg">
               <SlidersHorizontal className="h-3 w-3 text-accent" />
               <span className="num text-fg">
                 {measure.end >= measure.start ? "+" : "−"}
@@ -545,7 +600,7 @@ export function ChartPanel({
           ) : null}
 
           {measure && measure.end == null ? (
-            <div className="absolute left-2 top-9 z-10 rounded-sm border border-accent/30 bg-[#0d121d]/90 px-1.5 py-0.5 text-2xs text-muted">
+            <div className="absolute left-2 top-9 z-10 rounded-sm border border-accent/30 bg-[#0a0a0a]/90 px-1.5 py-0.5 text-2xs text-muted">
               Click a second point to measure
             </div>
           ) : null}
@@ -625,7 +680,7 @@ function ToolButton({
           onClick={onClick}
           className={cn(
             "flex h-6 w-6 items-center justify-center rounded-[2px] transition-colors",
-            active ? "bg-accent/15 text-[#9aa6ff]" : "text-faint hover:bg-panel-2 hover:text-fg",
+            active ? "bg-accent/15 text-[#f5f5f5]" : "text-faint hover:bg-panel-2 hover:text-fg",
             disabled && "pointer-events-none opacity-35",
           )}
         >

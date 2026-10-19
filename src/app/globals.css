@@ -1,19 +1,19 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #0a0e17;
-  --color-panel: #111622;
-  --color-panel-2: #151b29;
-  --color-panel-3: #1a2131;
-  --color-border: #1e2538;
-  --color-border-strong: #2b3550;
-  --color-fg: #f2f4f8;
-  --color-muted: #8993a7;
-  --color-faint: #5c6679;
-  --color-buy: #00e676;
-  --color-sell: #ff1744;
-  --color-accent: #596bff;
-  --color-warn: #ffb300;
+  --color-bg: #000000;
+  --color-panel: #0a0a0a;
+  --color-panel-2: #121212;
+  --color-panel-3: #1a1a1a;
+  --color-border: #262626;
+  --color-border-strong: #404040;
+  --color-fg: #f5f5f5;
+  --color-muted: #a3a3a3;
+  --color-faint: #6f6f6f;
+  --color-buy: #22c55e;
+  --color-sell: #ef4444;
+  --color-accent: #f5f5f5;
+  --color-warn: #f5a524;
   --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", "Roboto Mono", Menlo, Consolas, monospace;
 }
@@ -41,7 +41,7 @@
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--color-accent) 45%, transparent);
+    background: color-mix(in srgb, var(--color-fg) 30%, transparent);
     color: #fff;
   }
 
@@ -73,12 +73,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #2a3248;
+    background: #2e2e2e;
     border-radius: 2px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #394363;
+    background: #454545;
   }
 }
 
@@ -94,7 +94,7 @@
 
 @utility panel-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #2a3248 transparent;
+  scrollbar-color: #2e2e2e transparent;
 }
 
 @keyframes memescope-fade {

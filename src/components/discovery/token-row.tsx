@@ -61,7 +61,7 @@ export function TokenIdentity({
             <Link
               href={href}
               onClick={(event) => event.stopPropagation()}
-              className="truncate text-xs font-semibold leading-tight text-fg hover:text-[#b9c2ff] focus-visible:outline-none"
+              className="truncate text-xs font-semibold leading-tight text-fg hover:text-[#e5e5e5] focus-visible:outline-none"
             >
               {token.symbol}
             </Link>
@@ -209,8 +209,8 @@ export function TokenRow({
             className={cn(
               "h-6 rounded-[2px] border px-2 text-2xs font-semibold transition-colors",
               quote === "SOL"
-                ? "border-[#9945FF]/40 bg-[#9945FF]/10 text-[#c9a6ff] hover:bg-[#9945FF]/20"
-                : "border-[#627EEA]/40 bg-[#627EEA]/10 text-[#aab8ff] hover:bg-[#627EEA]/20",
+                ? "border-[#e5e5e5]/40 bg-[#e5e5e5]/10 text-[#d4d4d4] hover:bg-[#e5e5e5]/20"
+                : "border-[#a3a3a3]/40 bg-[#a3a3a3]/10 text-[#d4d4d4] hover:bg-[#a3a3a3]/20",
             )}
             aria-label={`Open ${token.symbol} paper trading terminal using the ${quote} account`}
           >

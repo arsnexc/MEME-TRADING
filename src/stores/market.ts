@@ -31,16 +31,32 @@ export const useMarketStore = create<MarketState>()((set, get) => ({
   getToken: (network, address) => get().snapshots[`${network}:${address}`] ?? null,
 }));
 
-export function selectOpenOrderTokens(state: { orders: { status: string; token: { network: NetworkId; address: string; pool: string; symbol: string; name: string; imageUrl: string | null } }[] }) {
+/**
+ * Tokens that need a background price tick.
+ *
+ * Covers both resting limit orders and positions carrying a take-profit or
+ * stop-loss level, so automatic exits are evaluated even when the user is not
+ * looking at that token's terminal.
+ */
+export function selectWatchedTokens(state: {
+  orders: { status: string; token: { network: NetworkId; address: string; pool: string; symbol: string; name: string; imageUrl: string | null } }[];
+  positions: { quantity: number; takeProfitPrice?: number | null; stopLossPrice?: number | null; token: { network: NetworkId; address: string; pool: string; symbol: string; name: string; imageUrl: string | null } }[];
+}) {
   const seen = new Set<string>();
-  return state.orders
-    .filter((order) => order.status === "open")
-    .filter((order) => {
-      const key = `${order.token.network}:${order.token.address}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 5)
-    .map((order) => order.token);
+  const tokens: { network: NetworkId; address: string; pool: string; symbol: string; name: string; imageUrl: string | null }[] = [];
+  const push = (token: { network: NetworkId; address: string; pool: string; symbol: string; name: string; imageUrl: string | null }) => {
+    const key = `${token.network}:${token.address}`;
+    if (seen.has(key) || tokens.length >= 8) return;
+    seen.add(key);
+    tokens.push(token);
+  };
+  for (const order of state.orders) {
+    if (order.status !== "open") continue;
+    push(order.token);
+  }
+  for (const position of state.positions) {
+    if (position.takeProfitPrice == null && position.stopLossPrice == null) continue;
+    push(position.token);
+  }
+  return tokens;
 }

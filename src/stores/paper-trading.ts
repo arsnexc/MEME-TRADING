@@ -15,6 +15,9 @@ import {
   limitTriggered,
   MAX_FEE_BPS,
   MAX_SLIPPAGE_BPS,
+  protectionFromPercent,
+  protectionPercent,
+  protectionTriggered,
   quantityForFraction,
   tokenKey,
 } from "@/lib/trading/engine";
@@ -32,7 +35,9 @@ import type {
   EngineResult,
   LimitOrder,
   PaperSnapshot,
+  Position,
   PriceTick,
+  ProtectionLevels,
   SellPlan,
   TokenRef,
   Trade,
@@ -50,6 +55,10 @@ export interface BuyActionInput {
   priceUsd: number;
   quoteUsd: number;
   priorityFeeQuote?: number;
+  /** Optional take-profit percentage above the resulting average entry. */
+  takeProfitPct?: number | null;
+  /** Optional stop-loss percentage below the resulting average entry. */
+  stopLossPct?: number | null;
   at?: number;
 }
 
@@ -85,6 +94,7 @@ export interface PaperActions {
   placeLimit: (input: PlaceLimitInput) => EngineResult<LimitOrder>;
   cancelLimit: (orderId: string) => EngineResult<LimitOrder>;
   processTicks: (ticks: PriceTick[]) => { fills: Trade[]; failures: LimitOrder[] };
+  setProtection: (positionId: string, levels: ProtectionLevels) => EngineResult<Position>;
   setFeeRateBps: (value: number) => void;
   setSlippageBps: (value: number) => void;
   resetAccount: () => void;
@@ -140,7 +150,28 @@ const createPaperState: StateCreator<PaperStore> = (set, get) => ({
     });
     if (!planResult.ok) return { ok: false, error: planResult.error };
     const plan = planResult.value;
-    const { positions, positionId } = applyBuyToPositions(state.positions, plan, token, quote);
+    const applied = applyBuyToPositions(state.positions, plan, token, quote);
+    const positionId = applied.positionId;
+    const opened = applied.positions.find((position) => position.id === positionId);
+    // Averaging into an existing position keeps the original percentages so a
+    // take profit never ends up below the new average entry. Explicit values
+    // from the ticket always win.
+    const previous = state.positions.find((position) => position.id === positionId);
+    const inheritedTakeProfit =
+      input.takeProfitPct ??
+      (previous?.takeProfitPrice != null ? protectionPercent(previous.avgEntryPrice, previous.takeProfitPrice) : null);
+    const inheritedStopLoss =
+      input.stopLossPct ??
+      (previous?.stopLossPrice != null ? protectionPercent(previous.avgEntryPrice, previous.stopLossPrice) : null);
+    const levels = protectionFromPercent(
+      opened?.avgEntryPrice ?? plan.fillPrice,
+      inheritedTakeProfit,
+      inheritedStopLoss,
+    );
+    const positions =
+      levels.takeProfitPrice == null && levels.stopLossPrice == null
+        ? applied.positions
+        : applied.positions.map((position) => (position.id === positionId ? { ...position, ...levels } : position));
     const trade = createBuyTrade(plan, token, quote);
 
     set({
@@ -370,6 +401,39 @@ const createPaperState: StateCreator<PaperStore> = (set, get) => ({
         orders[index] = { ...order, status: "filled", updatedAt: tick.at, filledTradeId: trade.id };
         changed = true;
       }
+
+      // Protection levels run after explicit limit orders so a user order always
+      // wins. A five-second grace after opening stops slippage from instantly
+      // triggering a tight stop on the same candle.
+      for (const position of [...positions]) {
+        if (tokenKey(position.token) !== key || position.quote !== quote) continue;
+        if (tick.at - position.updatedAt < 5_000) continue;
+        const trigger = protectionTriggered(position, priceQuote);
+        if (!trigger) continue;
+
+        const planResult = computeSellPlan({
+          token: position.token,
+          quote,
+          positionId: position.id,
+          quantity: position.quantity,
+          priceUsd: tick.priceUsd,
+          quoteUsd: tick.quoteUsd,
+          avgEntryPrice: position.avgEntryPrice,
+          feeRateBps: state.feeRateBps,
+          slippageBps: state.slippageBps,
+          at: tick.at,
+        });
+        if (!planResult.ok) continue;
+        const plan = planResult.value;
+        positions = applySellToPositions(positions, plan, position.id);
+        const trade: Trade = { ...createSellTrade(plan, position.token, quote), trigger };
+        trades = [trade, ...trades].slice(0, MAX_TRADE_HISTORY);
+        fills.push(trade);
+        balances = { ...balances, [quote]: d(balances[quote] + plan.netProceeds) };
+        realizedPnl = { ...realizedPnl, [quote]: d(realizedPnl[quote] + plan.realizedPnl) };
+        feesPaid = { ...feesPaid, [quote]: d(feesPaid[quote] + plan.fee) };
+        changed = true;
+      }
     }
 
     if (changed) {
@@ -383,6 +447,44 @@ const createPaperState: StateCreator<PaperStore> = (set, get) => ({
       });
     }
     return { fills, failures };
+  },
+
+  setProtection: (positionId, levels) => {
+    const state = get();
+    const position = state.positions.find((p) => p.id === positionId);
+    if (!position) return fail("NO_POSITION", "This position is no longer open.");
+    const takeProfit = levels?.takeProfitPrice ?? null;
+    const stopLoss = levels?.stopLossPrice ?? null;
+    if (takeProfit != null) {
+      if (!isPositiveFinite(takeProfit)) {
+        return fail("INVALID_PRICE", "Take profit must be a price above your average entry.");
+      }
+      if (takeProfit <= position.avgEntryPrice) {
+        return fail(
+          "INVALID_PRICE",
+          `Take profit must be above your average entry of ${position.avgEntryPrice.toPrecision(6)} ${position.quote}.`,
+        );
+      }
+    }
+    if (stopLoss != null) {
+      if (!isPositiveFinite(stopLoss)) {
+        return fail("INVALID_PRICE", "Stop loss must be a price below your average entry.");
+      }
+      if (stopLoss >= position.avgEntryPrice) {
+        return fail(
+          "INVALID_PRICE",
+          `Stop loss must be below your average entry of ${position.avgEntryPrice.toPrecision(6)} ${position.quote}.`,
+        );
+      }
+    }
+    const updated: Position = {
+      ...position,
+      takeProfitPrice: takeProfit,
+      stopLossPrice: stopLoss,
+      updatedAt: Date.now(),
+    };
+    set({ positions: state.positions.map((p) => (p.id === positionId ? updated : p)) });
+    return { ok: true, value: updated };
   },
 
   setFeeRateBps: (value) => set({ feeRateBps: clampBps(value, MAX_FEE_BPS) }),

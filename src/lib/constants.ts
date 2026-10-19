@@ -25,7 +25,7 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     explorerName: "Solscan",
     tokenUrl: (address) => `https://solscan.io/token/${address}`,
     txUrl: (hash) => `https://solscan.io/tx/${hash}`,
-    color: "#9945FF",
+    color: "#e5e5e5",
   },
   eth: {
     id: "eth",
@@ -37,7 +37,7 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     explorerName: "Etherscan",
     tokenUrl: (address) => `https://etherscan.io/token/${address}`,
     txUrl: (hash) => `https://etherscan.io/tx/${hash}`,
-    color: "#627EEA",
+    color: "#a3a3a3",
   },
   base: {
     id: "base",
@@ -49,7 +49,7 @@ export const NETWORKS: Record<NetworkId, NetworkConfig> = {
     explorerName: "Basescan",
     tokenUrl: (address) => `https://basescan.org/token/${address}`,
     txUrl: (hash) => `https://basescan.org/tx/${hash}`,
-    color: "#0052FF",
+    color: "#737373",
   },
 };
 
@@ -102,10 +102,10 @@ export const DISPLAY_CURRENCIES: DisplayCurrency[] = ["USD", "SOL", "ETH"];
 
 export type DiscoveryTab = "top" | "trending" | "radar" | "callouts" | "streamers";
 export const DISCOVERY_TABS: { value: DiscoveryTab; label: string; badge?: string }[] = [
-  { value: "top", label: "Top" },
+  { value: "top", label: "Top volume" },
   { value: "trending", label: "Trending" },
-  { value: "radar", label: "Radar", badge: "NEW" },
-  { value: "callouts", label: "Callouts" },
+  { value: "radar", label: "New pools", badge: "NEW" },
+  { value: "callouts", label: "My notes" },
   { value: "streamers", label: "Streamers" },
 ];
 

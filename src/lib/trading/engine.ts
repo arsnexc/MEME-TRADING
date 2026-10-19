@@ -5,6 +5,7 @@ import type {
   EngineResult,
   LimitOrder,
   Position,
+  ProtectionLevels,
   SellInput,
   SellPlan,
   TokenRef,
@@ -20,6 +21,11 @@ export const MAX_FEE_BPS = 500;
 export const MAX_SLIPPAGE_BPS = 5_000;
 
 export const SLIPPAGE_PRESETS = [50, 100, 500, 2_000];
+
+/** Take-profit / stop-loss percentages offered in the order ticket. */
+export const TAKE_PROFIT_PRESETS = [25, 50, 100, 200];
+export const STOP_LOSS_PRESETS = [10, 25, 50];
+export const MAX_PROTECTION_PCT = 10_000;
 
 /**
  * Fee convention (documented in the UI):
@@ -129,6 +135,54 @@ export function computeSellPlan(input: SellInput): EngineResult<SellPlan> {
       slippageBps: input.slippageBps,
     },
   };
+}
+
+/**
+ * Convert percentage targets into absolute trigger prices.
+ *
+ * Take profit sits above the average entry, stop loss below it. Both are stored
+ * as absolute quote-currency prices so later averaging up or down does not move
+ * an existing target.
+ */
+export function protectionFromPercent(
+  entryPrice: number,
+  takeProfitPct?: number | null,
+  stopLossPct?: number | null,
+): ProtectionLevels {
+  // Signed percentages are accepted (`protectionPercent` returns -20 for a 20%
+  // stop), so both inputs are normalised to a positive distance from entry.
+  const tpPct = takeProfitPct != null && Number.isFinite(takeProfitPct) ? Math.abs(takeProfitPct) : 0;
+  const slPct = stopLossPct != null && Number.isFinite(stopLossPct) ? Math.abs(stopLossPct) : 0;
+  const tp = tpPct > 0 ? d(entryPrice * (1 + Math.min(tpPct, MAX_PROTECTION_PCT) / 100)) : null;
+  const sl = slPct > 0 ? d(entryPrice * (1 - Math.min(slPct, 99.9) / 100)) : null;
+  return {
+    takeProfitPrice: tp != null && isPositiveFinite(tp) ? tp : null,
+    stopLossPrice: sl != null && isPositiveFinite(sl) ? sl : null,
+  };
+}
+
+/** Percentage move from entry to a target, for display. Null when the target is off. */
+export function protectionPercent(entryPrice: number, target: number | null | undefined): number | null {
+  if (!isPositiveFinite(entryPrice) || target == null || !isPositiveFinite(target)) return null;
+  return ((target - entryPrice) / entryPrice) * 100;
+}
+
+/**
+ * Decide whether a fresh price crossed a protection level.
+ *
+ * Both targets are checked against the quote-currency price. Take profit wins a
+ * tie so a gap through both levels books the better fill.
+ */
+export function protectionTriggered(
+  position: Pick<Position, "takeProfitPrice" | "stopLossPrice">,
+  priceQuote: number,
+): "take-profit" | "stop-loss" | null {
+  if (!isPositiveFinite(priceQuote)) return null;
+  const takeProfit = position.takeProfitPrice;
+  const stopLoss = position.stopLossPrice;
+  if (takeProfit != null && isPositiveFinite(takeProfit) && priceQuote >= takeProfit) return "take-profit";
+  if (stopLoss != null && isPositiveFinite(stopLoss) && priceQuote <= stopLoss) return "stop-loss";
+  return null;
 }
 
 export function tokenKey(token: Pick<TokenRef, "network" | "address">): string {

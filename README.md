@@ -12,8 +12,8 @@ MEMESCOPE is a Next.js app that pairs **real, provider-sourced memecoin market d
 | --- | --- |
 | **Discover** | Cross-chain scanner (Solana, Ethereum, Base) with trending / top-volume / newest-pool tabs, search, network filters, liquidity filter, sorting, pagination, saved trackers. |
 | **Terminal** | `/terminal?network=…&pool=…&token=…` — token header with live metrics and security hints, real OHLCV candlestick chart, market trades, top-trader and early-buyer aggregates derived from the fetched trade window, positions, limit orders, local callouts, and a full paper order ticket. |
-| **Paper execution** | Market buys/sells, resting limit orders monitored in the background, advanced fee/priority-fee simulation, fee-aware previews, validation, per-quote accounts. |
-| **Portfolio** | `/portfolio` — SOL and ETH accounts shown separately, equity, realized/unrealized PnL, open positions, limit orders, fill history, JSON export, guarded reset. |
+| **Paper execution** | Market buys/sells, resting limit orders monitored in the background, optional take-profit / stop-loss bracket on any buy, advanced fee/priority-fee simulation, fee-aware previews, validation, per-quote accounts. |
+| **Portfolio** | `/portfolio` — SOL and ETH accounts shown separately, total value broken into cash vs. positions, realized/open PnL, open positions with editable auto-exits, limit orders, fill history, JSON export, guarded reset. |
 | **Pulse** | `/pulse` — volume leaders, top movers and freshly created pools, with provider caveats stated in the UI. |
 | **Trackers** | `/trackers` — locally saved tokens and private callout notes, with live prices for the first 12 entries. |
 | **Honest placeholders** | `/perpetuals`, `/predictions`, `/vision` state plainly that no data source or model is connected instead of fabricating screens. |
@@ -59,8 +59,25 @@ Requests are cached in-memory with single-flight de-duplication, so concurrent t
 - **Unrealized PnL** subtracts the estimated exit fee: `marketValue − costBasis − exitFee`.
 - **Realized PnL** = net proceeds − quantity × average entry price.
 - **Limit orders** fill only when a fresh provider tick crosses the limit; they fill **at the limit price** with the fee rate and slippage captured at placement. Orders are monitored every 25 seconds while the app is open (`PriceWatcher`), never on stale snapshots.
-- **Price freshness.** Orders are blocked when the last price is older than 60 seconds. Stale positions are marked and selling is disabled until a fresh price arrives.
+- **Take profit / stop loss.** Optional per-position levels, set as percentages on the buy ticket or as absolute prices later from the positions table. Levels are stored as absolute quote-currency prices, so a refresh never moves them; if you average into a position without entering new levels, the original percentages are re-applied to the new average entry. On every fresh tick the engine checks take profit first (price ≥ level) then stop loss (price ≤ level), and closes the **whole** remaining position with the normal fee and slippage model. Fills carry `trigger: "take-profit" | "stop-loss"` and are labelled in the history. A 5-second grace after opening or editing prevents slippage from firing a tight stop instantly.
+- **Price freshness.** Orders are blocked when the last price is older than 60 seconds. Stale positions are marked and selling is disabled until a fresh price arrives. Automatic exits use the same rule: they only run on fresh provider ticks.
 - **Persistence.** Accounts, positions, orders, trades, watchlist and callouts live in versioned `localStorage` (`memescope.*.v1`). Every restored snapshot is validated field-by-field; corrupted payloads are dropped in favour of a fresh account rather than rendered.
+
+---
+
+### Where the numbers live
+
+The two numbers users ask about are deliberately different:
+
+- **Cash** is the free balance. Buying spends cash, so it drops by the full debit (notional + fee).
+- **Total value** is `cash + market value of open positions`. A buy moves money from cash into a position, so total value only changes by the fee at the moment of the trade. That is why a 1 SOL buy can leave "balance" looking unchanged while cash visibly falls — the portfolio card spells the split out and reconciles it.
+- Every automatic exit credits the net proceeds back to cash and records realized PnL separately.
+
+---
+
+### Theme
+
+The interface is a neutral pure-black palette (`#000` base, `#0a0a0a`–`#1a1a1a` panels, `#262626` borders) with green/red reserved for buy/sell and PnL. Network brand colours are no longer used for chips or text; a network is identified by its name and tiny neutral badge only.
 
 ---
 
@@ -163,6 +180,8 @@ The suite runs in Node/jsdom with mocked upstream responses:
 - **`tests/rate-limit.test.ts`** — local window exhaustion, cooldown after an upstream 429, cached responses not consuming budget, batched multi-pool quote refresh (one GeckoTerminal call for many pools), and SOL/ETH reference prices derived from DEX Screener instead of GeckoTerminal.
 - **`tests/ui.test.tsx`** — positions table (live vs stale sell blocking), order cancellation, callout limits and local save.
 - **`tests/execution.test.tsx`** — full market-buy flow through the order ticket, stale-price blocking, balance validation, limit placement, sell-without-position messaging.
+- **`tests/protection.test.ts`** — cash-vs-equity accounting after a buy, snapshot restore without a balance reset, take-profit/stop-loss percentage maths, bracket on buy, tick-triggered exits (with the grace window), averaging-in re-basing, level validation/clearing, and persistence of levels through sanitisation.
+- **`tests/live-candle.test.ts`** — the forming-candle merge used by the chart: close/high/low updates, rolling into the next bar, refusing to fabricate a run of missing bars.
 
 Not covered: a real browser E2E run and a live-provider integration run (the build environment has no browser binaries and no outbound access to the market APIs). The chart component is not exercised in jsdom because canvas is unavailable; its data/error states are covered by the service layer tests.
 
@@ -170,7 +189,7 @@ Not covered: a real browser E2E run and a live-provider integration run (the bui
 
 ## Known limitations
 
-- **Polling, not WebSockets.** Prices refresh every 20–45 s depending on the surface; limit orders check every 25 s while a tab is open. Background monitoring stops when the app is closed. Portfolios and trackers poll through `/api/quotes`, which batches up to 30 pools per network into one upstream request.
+- **Polling, not WebSockets.** Prices refresh every 20–45 s depending on the surface; limit orders and auto-exits check every 25 s while a tab is open. The chart folds each new provider price into the forming candle immediately, so the last bar moves between OHLCV polls; historical bars are always provider data and are never synthesised. Background monitoring stops when the app is closed. Portfolios and trackers poll through `/api/quotes`, which batches up to 30 pools per network into one upstream request.
 - **Trades are a provider-capped window.** Top-trader/early-buyer tables are derived from the returned page of trades, not a complete audit of the pool.
 - **No holder/creator/security oracle.** Holder concentration, mint/freeze authority status, dev holdings and bundle analysis are shown as unknown unless the provider exposes them (only locked liquidity is available).
 - **No derivatives, prediction markets or AI vision.** Those routes explain the missing integration rather than inventing data.

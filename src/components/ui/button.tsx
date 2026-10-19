@@ -8,8 +8,8 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         default: "border-border bg-panel-2 text-fg hover:border-border-strong hover:bg-panel-3",
-        primary: "border-accent/30 bg-accent text-white hover:bg-accent/90",
-        buy: "border-buy/25 bg-buy text-[#04150b] hover:brightness-95",
+        primary: "border-accent/30 bg-accent text-black hover:bg-white",
+        buy: "border-buy/25 bg-buy text-black hover:brightness-110",
         sell: "border-sell/25 bg-sell text-white hover:brightness-110",
         outline: "border-border bg-transparent text-fg hover:bg-panel-2",
         ghost: "border-transparent bg-transparent text-muted hover:bg-panel-2 hover:text-fg",

@@ -35,7 +35,7 @@ export function Toaster() {
             key={item.id}
             role="status"
             className={cn(
-              "pointer-events-auto flex items-start gap-2 rounded-sm border bg-[#0d121d] p-2.5 shadow-2xl shadow-black/50 animate-fade",
+              "pointer-events-auto flex items-start gap-2 rounded-sm border bg-[#0a0a0a] p-2.5 shadow-2xl shadow-black/50 animate-fade",
               TONES[item.variant],
             )}
           >
