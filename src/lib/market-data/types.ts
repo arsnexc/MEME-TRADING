@@ -142,6 +142,15 @@ export interface TradesResponse {
   };
 }
 
+export interface PoolPriceResponse {
+  network: string;
+  pool: string;
+  priceUsd: number;
+  /** Provider timestamp for the quote, not when we asked for it. */
+  fetchedAt: number;
+  source: "dexscreener";
+}
+
 export interface SearchResponse {
   tokens: MarketToken[];
   fetchedAt: number;

@@ -38,6 +38,8 @@ export function ExecutionPanel({
   market,
   quotePrices,
   priceLastUpdated,
+  livePriceUsd,
+  livePriceAt,
   paperPositions,
   hasTradeWindow,
   trades,
@@ -47,6 +49,9 @@ export function ExecutionPanel({
   market: MarketToken;
   quotePrices: QuotePrices;
   priceLastUpdated: number | null;
+  /** Freshest tick from the live-price poller; falls back to the market query. */
+  livePriceUsd?: number | null;
+  livePriceAt?: number | null;
   paperPositions: ReturnType<typeof usePaperStore.getState>["positions"];
   hasTradeWindow: boolean;
   trades: MarketTrade[];
@@ -66,11 +71,13 @@ export function ExecutionPanel({
     (p) => p.token.network === token.network && p.token.address === token.address,
   );
   const quoteUsd = quotePrices[quote]?.usd ?? null;
-  const referencePrice =
-    market.priceUsd != null && quoteUsd ? market.priceUsd / quoteUsd : null;
-  const priceAge = priceLastUpdated ? now - priceLastUpdated : null;
+  // Prefer the fast ticker so a fill is priced at what the chart is showing.
+  const referencePriceUsd = livePriceUsd ?? market.priceUsd;
+  const referenceAt = livePriceAt ?? priceLastUpdated;
+  const referencePrice = referencePriceUsd != null && quoteUsd ? referencePriceUsd / quoteUsd : null;
+  const priceAge = referenceAt ? now - referenceAt : null;
   const priceFresh = priceAge != null && priceAge < 60_000;
-  const displayAge = priceLastUpdated ? formatRelativeTime(priceLastUpdated, now) : "unknown";
+  const displayAge = referenceAt ? formatRelativeTime(referenceAt, now) : "unknown";
 
   const [side, setSide] = useState<Side>("buy");
   const [orderType, setOrderType] = useState<OrderType>("market");
@@ -125,7 +132,7 @@ export function ExecutionPanel({
 
   const preview = useMemo(() => {
     if (!amount.ok || amount.value == null) return null;
-    if (!quoteUsd || !priceLastUpdated) return null;
+    if (!quoteUsd || !referenceAt) return null;
     if (orderType === "limit") {
       if (!limitPrice.ok || limitPrice.value == null) return null;
       const syntheticUsd = limitPrice.value * quoteUsd;
@@ -157,13 +164,13 @@ export function ExecutionPanel({
       return result.ok ? { kind: "sell" as const, plan: result.value, limit: limitPrice.value } : null;
     }
 
-    if (!market.priceUsd) return null;
+    if (!referencePriceUsd) return null;
     if (side === "buy") {
       const result = computeBuyPlan({
         token,
         quote,
         amountQuote: amount.value,
-        priceUsd: market.priceUsd,
+        priceUsd: referencePriceUsd,
         quoteUsd,
         balance: Number.MAX_SAFE_INTEGER,
         feeRateBps,
@@ -178,7 +185,7 @@ export function ExecutionPanel({
       quote,
       positionId: position.id,
       quantity: amount.value,
-      priceUsd: market.priceUsd,
+      priceUsd: referencePriceUsd,
       quoteUsd,
       avgEntryPrice: position.avgEntryPrice,
       feeRateBps,
@@ -195,11 +202,11 @@ export function ExecutionPanel({
     token,
     feeRateBps,
     slippageBps,
-    market.priceUsd,
+    referencePriceUsd,
     position,
     priorityFee,
     priorityFeeValid,
-    priceLastUpdated,
+    referenceAt,
   ]);
 
   const buyNotional = side === "buy" && amount.ok && amount.value != null ? amount.value : 0;
@@ -210,8 +217,8 @@ export function ExecutionPanel({
   const validation = (() => {
     if (!hydrated) return "Restoring paper account…";
     if (!quoteUsd) return "Quote reference price unavailable. Trading is paused.";
-    if (!market.priceUsd) return "No usable market price for this pool.";
-    if (!priceLastUpdated) return "Waiting for a price update.";
+    if (!referencePriceUsd) return "No usable market price for this pool.";
+    if (!referenceAt) return "Waiting for a price update.";
     if (!priceFresh) return `Price is stale (${displayAge}). Refresh before trading.`;
     if (side === "sell" && !position) return "No open position for this token. Buy first or switch to Buy.";
     if (amountInput.trim() === "") return side === "buy" ? "Enter a quote amount." : "Enter a token quantity.";
@@ -262,7 +269,7 @@ export function ExecutionPanel({
     await new Promise((resolve) => setTimeout(resolve, 180));
     try {
       const store = usePaperStore.getState();
-      if (!market.priceUsd || !quoteUsd) {
+      if (!referencePriceUsd || !quoteUsd) {
         setMessage({ kind: "error", text: "No fresh reference price. Order rejected." });
         return;
       }
@@ -297,7 +304,7 @@ export function ExecutionPanel({
         const result = store.buy({
           token,
           amountQuote: amount.value!,
-          priceUsd: market.priceUsd,
+          priceUsd: referencePriceUsd,
           quoteUsd,
           priorityFeeQuote: orderType === "advanced" ? priorityFee : 0,
           takeProfitPct: protectionAvailable && takeProfitValid ? takeProfitPct : null,
@@ -329,7 +336,7 @@ export function ExecutionPanel({
         const result = store.sell({
           positionId: position.id,
           quantity: amount.value!,
-          priceUsd: market.priceUsd,
+          priceUsd: referencePriceUsd,
           quoteUsd,
         });
         if (!result.ok) {

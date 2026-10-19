@@ -62,6 +62,37 @@ export async function dsTokenPairs(network: NetworkId, addresses: string[]): Pro
   };
 }
 
+interface DsPairResponse {
+  pairs?: DsPair[] | null;
+  pair?: DsPair | null;
+}
+
+/**
+ * Single-pair lookup for the live chart ticker.
+ *
+ * Deliberately cached for only 1.5 s: it backs a ~3 s poll, so a short TTL
+ * de-duplicates accidental double requests without serving a stale price. DEX
+ * Screener allows ~300 req/min, so this stays comfortably inside the budget.
+ */
+export async function dsPair(
+  network: NetworkId,
+  pairAddress: string,
+): Promise<{ pair: DsPair | null; fetchedAt: number; stale: boolean }> {
+  const chain = NETWORKS[network].dexscreenerId;
+  const key = `ds:pair:${chain}:${pairAddress.toLowerCase()}`;
+  const result = await cachedJson<DsPairResponse>(
+    key,
+    1_500,
+    () =>
+      getJson<DsPairResponse>(`${DS_BASE}/latest/dex/pairs/${chain}/${encodeURIComponent(pairAddress)}`, {
+        provider: "dexscreener",
+        timeoutMs: 4_500,
+      }),
+  );
+  const pair = result.value?.pair ?? result.value?.pairs?.[0] ?? null;
+  return { pair, fetchedAt: result.fetchedAt, stale: result.stale };
+}
+
 export async function dsSearch(query: string): Promise<TimedPairs> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return { pairs: [], fetchedAt: Date.now(), stale: false };

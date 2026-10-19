@@ -638,8 +638,9 @@ export function ChartPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-2.5 py-1 text-2xs text-faint">
         <span>
-          OHLCV: GeckoTerminal · no synthetic candles · polled every 20s ·{" "}
-          {lastUpdated ? `updated ${new Date(lastUpdated).toLocaleTimeString("en-GB", { hour12: false })}` : "pending"}
+          OHLCV: GeckoTerminal · no synthetic candles · history every 20s · last bar on
+          every price tick ·{" "}
+          {lastUpdated ? `refreshed ${new Date(lastUpdated).toLocaleTimeString("en-GB", { hour12: false })}` : "pending"}
         </span>
         <span className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1">

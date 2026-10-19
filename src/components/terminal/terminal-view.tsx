@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, RefreshCw, WifiOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ import type { MarketToken, QuotePrices, TokenDetailResponse } from "@/lib/market
 import type { ChartTimeframe, DisplayCurrency, NetworkId } from "@/lib/constants";
 import type { Position, TokenRef } from "@/lib/trading/types";
 import { formatRelativeTime } from "@/lib/formatting";
+import { useLivePrice } from "@/hooks/use-live-price";
 import { useNow } from "@/hooks/use-now";
 import { usePollingQuery } from "@/hooks/use-polling-query";
 import { cn } from "@/lib/utils";
@@ -84,6 +85,31 @@ export function TerminalView({
   const market: MarketToken | null = detail?.market ?? snapshots[`${network}:${tokenAddress ?? ""}`] ?? null;
   const activeAddress = market?.tokenAddress ?? tokenAddress ?? "";
   const quotePrices = detail?.quotePrices ?? storeQuotePrices ?? EMPTY_PRICES;
+  const live = useLivePrice({ network, pool, enabled: hydrated && Boolean(market) });
+  const lastLiveAt = useRef(0);
+  const livePrice = live.priceUsd ?? market?.priceUsd ?? null;
+  const livePriceAt = live.at ?? marketQuery.lastUpdated;
+
+  // Feed every fast tick to the paper engine so pending limit orders and
+  // take-profit / stop-loss levels react between the slower market polls.
+  useEffect(() => {
+    if (!live.at || !live.priceUsd || live.at === lastLiveAt.current) return;
+    const quote = market?.quote;
+    if (!quote) return;
+    const quoteUsd = quotePrices[quote]?.usd;
+    if (!quoteUsd) return;
+    lastLiveAt.current = live.at;
+    processTicks([
+      {
+        network,
+        address: activeAddress,
+        pool,
+        priceUsd: live.priceUsd,
+        quoteUsd,
+        at: live.at,
+      },
+    ]);
+  }, [live.at, live.priceUsd, market?.quote, processTicks, quotePrices, network, activeAddress, pool]);
 
   useEffect(() => {
     if (!detail) return;
@@ -128,14 +154,14 @@ export function TerminalView({
         position.token.address.toLowerCase() === activeAddress.toLowerCase();
       const quoteUsd = quotePrices[position.quote]?.usd ?? null;
 
-      if (isCurrent && detail?.market.priceUsd && quoteUsd && marketQuery.lastUpdated) {
-        const fresh = now - marketQuery.lastUpdated < 60_000;
+      if (isCurrent && livePrice && quoteUsd && livePriceAt) {
+        const fresh = now - livePriceAt < 60_000;
         if (fresh) {
           return {
-            priceUsd: detail.market.priceUsd,
+            priceUsd: livePrice,
             quoteUsd,
             source: "live",
-            at: marketQuery.lastUpdated,
+            at: livePriceAt,
           };
         }
       }
@@ -148,7 +174,7 @@ export function TerminalView({
 
       return { priceUsd: null, quoteUsd, source: "last-seen", at: position.lastPriceAt };
     },
-    [activeAddress, detail, marketQuery.lastUpdated, network, now, quotePrices, snapshots],
+    [activeAddress, livePrice, livePriceAt, network, now, quotePrices, snapshots],
   );
 
   const handleSell = useCallback(
@@ -319,8 +345,8 @@ export function TerminalView({
             paperTrades={paperTrades}
             lastUpdated={chartQuery.lastUpdated}
             stale={Boolean(chartQuery.error && chartCandles.length > 0)}
-            livePrice={market?.priceUsd ?? null}
-            livePriceAt={marketQuery.lastUpdated}
+            livePrice={livePrice}
+            livePriceAt={livePriceAt}
           />
         </div>
 
@@ -330,6 +356,8 @@ export function TerminalView({
             market={market}
             quotePrices={quotePrices}
             priceLastUpdated={lastUpdated}
+            livePriceUsd={live.priceUsd}
+            livePriceAt={live.at}
             paperPositions={positions}
             hasTradeWindow={Boolean(tradesQuery.lastUpdated && !tradesQuery.error)}
             trades={marketTrades}

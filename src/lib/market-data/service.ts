@@ -8,7 +8,7 @@ import {
   type QuoteCurrency,
   type ScannerTimeframe,
 } from "@/lib/constants";
-import { dsSearch, dsTokenPairs, pickDsPair, priceFromPairs, type DsPair } from "./dexscreener";
+import { dsPair, dsSearch, dsTokenPairs, pickDsPair, priceFromPairs, type DsPair } from "./dexscreener";
 import { gtOhlcv, gtPools, gtPoolsMulti, gtPool, gtTrades, gtTokenPriceUsd, type GtPool } from "./geckoterminal";
 import { dedupeTokens, normalizeDsPair, normalizeGtPool, tokenAddressFromRelationshipId } from "./normalize";
 import { errorMessage } from "./upstream";
@@ -16,6 +16,7 @@ import {
   type MarketToken,
   type MarketsResponse,
   type OhlcvResponse,
+  type PoolPriceResponse,
   type QuotePrices,
   type QuotesResponse,
   type SearchResponse,
@@ -96,6 +97,28 @@ function quotePrefill(dsByNetwork: Map<NetworkId, DsPair[]>): Partial<Record<Quo
     if (price != null) prefill[quote] = price;
   }
   return prefill;
+}
+
+/**
+ * Latest single-pool price for the chart ticker.
+ *
+ * One cheap DEX Screener request per call, no candle history involved — this is
+ * only ever used to move the forming candle and to evaluate pending exits
+ * between the slower GeckoTerminal polls.
+ */
+export async function fetchPoolPrice(network: NetworkId, pool: string): Promise<PoolPriceResponse> {
+  if (!pool || pool.length > 128) {
+    throw new UpstreamError("http", "Invalid pool reference.", { status: 404, provider: "dexscreener" });
+  }
+  const { pair, fetchedAt } = await dsPair(network, pool);
+  const price = Number(pair?.priceUsd);
+  if (!pair || !Number.isFinite(price) || price <= 0) {
+    throw new UpstreamError("http", "No live price is available for this pool.", {
+      status: 404,
+      provider: "dexscreener",
+    });
+  }
+  return { network, pool, priceUsd: price, fetchedAt, source: "dexscreener" };
 }
 
 export function quotePriceUsd(prices: QuotePrices, quote: QuoteCurrency): number | null {

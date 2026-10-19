@@ -4,7 +4,7 @@ import { pickDsPair } from "@/lib/market-data/dexscreener";
 import type { GtPool } from "@/lib/market-data/geckoterminal";
 import type { DsPair } from "@/lib/market-data/dexscreener";
 import { clearMarketCache } from "@/lib/market-data/upstream";
-import { fetchMarkets, fetchOhlcv, fetchTrades, parseNetworks } from "@/lib/market-data/service";
+import { fetchMarkets, fetchOhlcv, fetchPoolPrice, fetchTrades, parseNetworks } from "@/lib/market-data/service";
 import { filterAndSortTokens, paginate, sortValue } from "@/lib/market-view";
 import { UNKNOWN_SECURITY_NOTE } from "@/lib/market-data/types";
 
@@ -215,6 +215,32 @@ describe("service with mocked providers", () => {
     expect(result.tokens[0].source).toBe("geckoterminal");
     expect(result.warnings.join(" ")).toMatch(/logos\/socials unavailable/);
     expect(result.quotePrices.SOL).toBeNull();
+  });
+
+  it("reads a single pool price for the chart ticker", async () => {
+    mockFetch((url) => {
+      expect(url).toContain("/latest/dex/pairs/solana/pool123");
+      return { body: { pair: { ...pair, priceUsd: "0.0231" }, pairs: null } };
+    });
+    const result = await fetchPoolPrice("solana", "pool123");
+    expect(result.priceUsd).toBeCloseTo(0.0231, 10);
+    expect(result.network).toBe("solana");
+    expect(result.pool).toBe("pool123");
+    expect(result.source).toBe("dexscreener");
+    expect(Number.isFinite(result.fetchedAt)).toBe(true);
+  });
+
+  it("accepts the pairs array shape and rejects a pair without a usable price", async () => {
+    mockFetch(() => ({ body: { pairs: [{ ...pair, priceUsd: "0.5" }] } }));
+    await expect(fetchPoolPrice("solana", "pool123")).resolves.toMatchObject({ priceUsd: 0.5 });
+
+    clearMarketCache();
+    mockFetch(() => ({ body: { pairs: [{ ...pair, priceUsd: undefined }] } }));
+    await expect(fetchPoolPrice("solana", "pool123")).rejects.toThrow(/price/i);
+
+    clearMarketCache();
+    mockFetch(() => ({ body: { pairs: [] } }));
+    await expect(fetchPoolPrice("solana", "pool123")).rejects.toThrow(/price/i);
   });
 
   it("parses OHLCV rows, sorts them and drops duplicates", async () => {

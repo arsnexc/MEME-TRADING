@@ -33,7 +33,7 @@ MEMESCOPE is a Next.js app that pairs **real, provider-sourced memecoin market d
 | [GeckoTerminal](https://www.geckoterminal.com/dex-api) | Pool lists, pool detail, real OHLCV, trades, locked liquidity | 30 req/min documented; limiter caps at 24/min |
 | [DEX Screener](https://docs.dexscreener.com/api/reference) | Logos, socials, circulating market cap, liquidity, search, SOL/ETH reference prices | 300 req/min documented; limiter caps at 200/min |
 
-Both are public and keyless. GeckoTerminal's budget is the scarce one, so it is reserved for pools, candles and trades: a discovery refresh costs **one GeckoTerminal call per requested network**, and SOL/ETH reference prices ride along in the DEX Screener batch that already fetches logos. A terminal page costs seven GeckoTerminal calls per minute (pool 30 s, candles 20 s, trades 30 s).
+Both are public and keyless. GeckoTerminal's budget is the scarce one, so it is reserved for pools, candles and trades: a discovery refresh costs **one GeckoTerminal call per requested network**, and SOL/ETH reference prices ride along in the DEX Screener batch that already fetches logos. A terminal page costs seven GeckoTerminal calls per minute (pool 30 s, candles 20 s, trades 30 s), plus a deliberately cheap DEX Screener single-pair read every **3 seconds** for the live last candle and paper exit checks.
 
 ### When a provider rate-limits
 
@@ -60,6 +60,7 @@ Requests are cached in-memory with single-flight de-duplication, so concurrent t
 - **Realized PnL** = net proceeds − quantity × average entry price.
 - **Limit orders** fill only when a fresh provider tick crosses the limit; they fill **at the limit price** with the fee rate and slippage captured at placement. Orders are monitored every 25 seconds while the app is open (`PriceWatcher`), never on stale snapshots.
 - **Take profit / stop loss.** Optional per-position levels, set as percentages on the buy ticket or as absolute prices later from the positions table. Levels are stored as absolute quote-currency prices, so a refresh never moves them; if you average into a position without entering new levels, the original percentages are re-applied to the new average entry. On every fresh tick the engine checks take profit first (price ≥ level) then stop loss (price ≤ level), and closes the **whole** remaining position with the normal fee and slippage model. Fills carry `trigger: "take-profit" | "stop-loss"` and are labelled in the history. A 5-second grace after opening or editing prevents slippage from firing a tight stop instantly.
+- **Live chart.** Candle history still comes from GeckoTerminal every 20 s and is never synthesised. Between those polls the terminal asks `GET /api/price` (one DEX Screener pair read, no-store, ~3 s cadence, paused in hidden tabs) and rewrites only the **forming** candle, opening a single next candle when the bucket rolls over. The same tick drives paper limit fills and take-profit / stop-loss checks, so the chart and the engine agree. If the ticker errors, the last price stays and the chart shows a stale note rather than inventing candles.
 - **Price freshness.** Orders are blocked when the last price is older than 60 seconds. Stale positions are marked and selling is disabled until a fresh price arrives. Automatic exits use the same rule: they only run on fresh provider ticks.
 - **Persistence.** Accounts, positions, orders, trades, watchlist and callouts live in versioned `localStorage` (`memescope.*.v1`). Every restored snapshot is validated field-by-field; corrupted payloads are dropped in favour of a fresh account rather than rendered.
 
@@ -153,6 +154,7 @@ All routes return JSON and validate input.
 | `GET /api/token` | `network`, `pool`, optional `token` | `{ market, dexName, quotePrices, fetchedAt, stale, warnings }` |
 | `GET /api/ohlcv` | `network`, `pool`, `timeframe=1m\|5m\|15m\|1h\|4h\|1d` | `{ candles, timeframe, fetchedAt, stale, source, warnings }` |
 | `GET /api/quotes` | `pools` — comma-separated `network:pool` refs (≤ 30 per network, ≤ 90 total) | `{ tokens, quotePrices, fetchedAt, stale, warnings }` |
+| `GET /api/price` | `network`, `pool` | `{ network, pool, priceUsd, fetchedAt, source }` — single-pair read for the live candle, `no-store` |
 | `GET /api/trades` | `network`, `pool`, optional `limit` (10–300) | `{ trades, fetchedAt, stale, warnings, window }` |
 | `GET /api/search` | `q` (min 2 chars) | `{ tokens, fetchedAt, query }` |
 | `GET /api/quote-prices` | — | `{ prices: { SOL, ETH, fetchedAt }, warnings }` |
@@ -189,7 +191,7 @@ Not covered: a real browser E2E run and a live-provider integration run (the bui
 
 ## Known limitations
 
-- **Polling, not WebSockets.** Prices refresh every 20–45 s depending on the surface; limit orders and auto-exits check every 25 s while a tab is open. The chart folds each new provider price into the forming candle immediately, so the last bar moves between OHLCV polls; historical bars are always provider data and are never synthesised. Background monitoring stops when the app is closed. Portfolios and trackers poll through `/api/quotes`, which batches up to 30 pools per network into one upstream request.
+- **Polling, not WebSockets.** Prices refresh every 20–45 s depending on the surface, and the open terminal adds a ~3 s single-pair tick for the last candle; limit orders and auto-exits check every 25 s while a tab is open. The chart folds each new provider price into the forming candle immediately, so the last bar moves between OHLCV polls; historical bars are always provider data and are never synthesised. Background monitoring stops when the app is closed. Portfolios and trackers poll through `/api/quotes`, which batches up to 30 pools per network into one upstream request.
 - **Trades are a provider-capped window.** Top-trader/early-buyer tables are derived from the returned page of trades, not a complete audit of the pool.
 - **No holder/creator/security oracle.** Holder concentration, mint/freeze authority status, dev holdings and bundle analysis are shown as unknown unless the provider exposes them (only locked liquidity is available).
 - **No derivatives, prediction markets or AI vision.** Those routes explain the missing integration rather than inventing data.

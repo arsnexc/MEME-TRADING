@@ -289,17 +289,17 @@ export function PortfolioView() {
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Metric
                   label="Total value"
-                  value={`${formatQuote(equity, quote)} ${quote}`}
+                  value={formatQuote(equity, quote)}
                   sub={`cash + positions${account.usdValue != null ? ` · ≈ $${account.usdValue.toFixed(2)}` : ""}`}
                 />
                 <Metric
                   label="Cash"
-                  value={`${formatQuote(account.free, quote)} ${quote}`}
+                  value={formatQuote(account.free, quote)}
                   sub="ready to spend"
                 />
                 <Metric
                   label="In positions"
-                  value={`${formatQuote(account.value, quote)} ${quote}`}
+                  value={formatQuote(account.value, quote)}
                   sub="current market value"
                 />
                 <Metric
@@ -315,13 +315,13 @@ export function PortfolioView() {
                   <span className={cn("num", returnPct >= 0 ? "text-buy" : "text-sell")}>
                     {formatPercent(returnPct, { sign: true })}
                   </span>
-                  <span className="text-faint"> (from {formatQuote(account.initial, quote, 0)} {quote})</span>
+                  <span className="text-faint"> (from {formatQuote(account.initial, quote, 0)})</span>
                 </span>
                 <span>
-                  Realized <span className={cn("num", pnlClass(account.realized))}>{formatQuote(account.realized, quote)} {quote}</span>
+                  Realized <span className={cn("num", pnlClass(account.realized))}>{formatQuote(account.realized, quote)}</span>
                 </span>
                 <span>
-                  Fees paid <span className="num text-muted">{formatQuote(account.fees, quote)} {quote}</span>
+                  Fees paid <span className="num text-muted">{formatQuote(account.fees, quote)}</span>
                 </span>
               </div>
               <p className="mt-1 text-2xs leading-relaxed text-faint">

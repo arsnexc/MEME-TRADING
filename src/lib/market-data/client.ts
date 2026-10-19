@@ -1,6 +1,7 @@
 import {
   fetchMarkets,
   fetchOhlcv,
+  fetchPoolPrice,
   fetchQuotePrices,
   fetchSearch,
   fetchTokenDetail,
@@ -13,6 +14,7 @@ import { UpstreamError } from "./types";
 import type {
   MarketsResponse,
   OhlcvResponse,
+  PoolPriceResponse,
   QuotesResponse,
   SearchResponse,
   TradesResponse,
@@ -208,6 +210,28 @@ export function fetchTradesClient(params: {
     () => fetchTrades({ network: params.network, pool: params.pool, limit: params.limit }),
     params.signal,
   );
+}
+
+/**
+ * Live single-pool price for the chart ticker.
+ *
+ * This deliberately does not touch the global transport preference: a missing
+ * pair is not a reason to pin the whole session to the direct transport.
+ */
+export async function fetchPoolPriceClient(params: {
+  network: NetworkId;
+  pool: string;
+  signal?: AbortSignal;
+}): Promise<Fetched<PoolPriceResponse>> {
+  const search = new URLSearchParams({ network: params.network, pool: params.pool });
+  try {
+    const data = await proxyJson<PoolPriceResponse>(`/api/price?${search.toString()}`, params.signal);
+    return { data, transport: "proxy", receivedAt: Date.now() };
+  } catch (error) {
+    if (params.signal?.aborted || !shouldFallback(error)) throw error;
+  }
+  const data = await fetchPoolPrice(params.network, params.pool);
+  return { data, transport: "direct", receivedAt: Date.now() };
 }
 
 export function fetchSearchClient(params: {
