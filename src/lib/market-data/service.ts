@@ -1,5 +1,6 @@
 import {
   NETWORKS,
+  QUOTE_CURRENCIES,
   QUOTE_REFERENCE,
   SUPPORTED_NETWORK_IDS,
   type ChartTimeframe,
@@ -7,15 +8,16 @@ import {
   type QuoteCurrency,
   type ScannerTimeframe,
 } from "@/lib/constants";
-import { dsSearch, dsTokenPairs, pickDsPair, type DsPair } from "./dexscreener";
-import { gtOhlcv, gtPools, gtPool, gtTrades, gtTokenPriceUsd } from "./geckoterminal";
-import { dedupeTokens, normalizeDsPair, normalizeGtPool } from "./normalize";
+import { dsSearch, dsTokenPairs, pickDsPair, priceFromPairs, type DsPair } from "./dexscreener";
+import { gtOhlcv, gtPools, gtPoolsMulti, gtPool, gtTrades, gtTokenPriceUsd, type GtPool } from "./geckoterminal";
+import { dedupeTokens, normalizeDsPair, normalizeGtPool, tokenAddressFromRelationshipId } from "./normalize";
 import { errorMessage } from "./upstream";
 import {
   type MarketToken,
   type MarketsResponse,
   type OhlcvResponse,
   type QuotePrices,
+  type QuotesResponse,
   type SearchResponse,
   type TradesResponse,
   type TokenDetailResponse,
@@ -35,11 +37,40 @@ export function parseNetworks(value: string | null | undefined): NetworkId[] {
   return requested.length > 0 ? [...new Set(requested)] : SUPPORTED_NETWORK_IDS;
 }
 
-export async function fetchQuotePrices(): Promise<{ prices: QuotePrices; warnings: string[] }> {
-  const [sol, eth] = await Promise.all([
-    gtTokenPriceUsd(QUOTE_REFERENCE.SOL.network, QUOTE_REFERENCE.SOL.address),
-    gtTokenPriceUsd(QUOTE_REFERENCE.ETH.network, QUOTE_REFERENCE.ETH.address),
-  ]);
+/** Quote addresses worth adding to a DEX Screener batch so reference prices come for free. */
+function quoteAddressFor(network: NetworkId): string | null {
+  const quote = NETWORKS[network].quote;
+  const reference = QUOTE_REFERENCE[quote];
+  return reference.network === network ? reference.address : null;
+}
+
+/**
+ * Reference prices for SOL and ETH.
+ *
+ * DEX Screener is queried first because its budget (≈300 req/min) is an order
+ * of magnitude larger than GeckoTerminal's, which we reserve for pools, candles
+ * and trades. GeckoTerminal is only contacted for quotes DEX Screener could not
+ * resolve. Callers that already fetched a batch can pass `prefill` to skip the
+ * network entirely.
+ */
+export async function fetchQuotePrices(
+  prefill: Partial<Record<QuoteCurrency, number>> = {},
+): Promise<{ prices: QuotePrices; warnings: string[] }> {
+  const resolve = async (quote: QuoteCurrency): Promise<number | null> => {
+    const known = prefill[quote];
+    if (known != null) return known;
+    const reference = QUOTE_REFERENCE[quote];
+    try {
+      const { pairs } = await dsTokenPairs(reference.network, [reference.address]);
+      const fromDs = priceFromPairs(pairs, reference.address);
+      if (fromDs != null) return fromDs;
+    } catch {
+      // Fall through to GeckoTerminal.
+    }
+    return gtTokenPriceUsd(reference.network, reference.address);
+  };
+
+  const [sol, eth] = await Promise.all([resolve("SOL"), resolve("ETH")]);
   const now = Date.now();
   const warnings: string[] = [];
   if (sol == null) warnings.push("SOL/USD reference price unavailable — SOL-denominated figures may be blank.");
@@ -52,6 +83,19 @@ export async function fetchQuotePrices(): Promise<{ prices: QuotePrices; warning
     },
     warnings,
   };
+}
+
+/** Pull SOL/ETH reference prices out of already-fetched DEX Screener batches. */
+function quotePrefill(dsByNetwork: Map<NetworkId, DsPair[]>): Partial<Record<QuoteCurrency, number>> {
+  const prefill: Partial<Record<QuoteCurrency, number>> = {};
+  for (const quote of QUOTE_CURRENCIES) {
+    const reference = QUOTE_REFERENCE[quote];
+    const pairs = dsByNetwork.get(reference.network);
+    if (!pairs) continue;
+    const price = priceFromPairs(pairs, reference.address);
+    if (price != null) prefill[quote] = price;
+  }
+  return prefill;
 }
 
 export function quotePriceUsd(prices: QuotePrices, quote: QuoteCurrency): number | null {
@@ -132,10 +176,14 @@ export async function fetchMarkets(params: {
   const dsByNetwork = new Map<NetworkId, DsPair[]>();
   await Promise.all(
     [...new Set(pools.map((p) => p.network))].map(async (network) => {
-      const addresses = pools
+      const baseAddresses = pools
         .filter((p) => p.network === network)
         .map((p) => p.pool.relationships?.base_token?.data?.id?.split("_").slice(1).join("_") ?? "")
         .filter(Boolean);
+      // Batch the wrapped native token with the page so SOL/ETH reference prices
+      // do not need their own GeckoTerminal request. 30 addresses max.
+      const quoteAddress = quoteAddressFor(network);
+      const addresses = (quoteAddress ? [quoteAddress, ...baseAddresses] : baseAddresses).slice(0, 30);
       try {
         const result = await dsTokenPairs(network, addresses);
         if (result.stale) stale = true;
@@ -156,7 +204,7 @@ export async function fetchMarkets(params: {
     if (token) normalized.push(token);
   }
 
-  const quote = await fetchQuotePrices().catch(() => ({
+  const quote = await fetchQuotePrices(quotePrefill(dsByNetwork)).catch(() => ({
     prices: { SOL: null, ETH: null, fetchedAt: Date.now() },
     warnings: ["Quote reference prices unavailable."],
   }));
@@ -185,6 +233,7 @@ export async function fetchTokenDetail(query: TokenQuery): Promise<TokenDetailRe
   let stale = false;
   let market: MarketToken | null = null;
   let dexName: string | null = null;
+  const dsByNetwork = new Map<NetworkId, DsPair[]>();
 
   try {
     const poolResult = await gtPool(query.network, query.pool);
@@ -196,8 +245,13 @@ export async function fetchTokenDetail(query: TokenQuery): Promise<TokenDetailRe
     let dsPair: DsPair | null = null;
     if (tokenFromPool) {
       try {
-        const ds = await dsTokenPairs(query.network, [tokenFromPool]);
+        // Include the wrapped native token so the SOL/ETH reference price arrives
+        // in the same batch instead of costing a second provider request.
+        const quoteAddress = quoteAddressFor(query.network);
+        const addresses = quoteAddress ? [tokenFromPool, quoteAddress] : [tokenFromPool];
+        const ds = await dsTokenPairs(query.network, addresses);
         if (ds.stale) stale = true;
+        dsByNetwork.set(query.network, ds.pairs);
         dsPair = pickDsPair(ds.pairs, query.pool, tokenFromPool);
       } catch (error) {
         warnings.push(`Logo and social data unavailable: ${errorMessage(error)}`);
@@ -233,7 +287,7 @@ export async function fetchTokenDetail(query: TokenQuery): Promise<TokenDetailRe
     throw new UpstreamError("http", "Token detail is unavailable for this pool.", { status: 404 });
   }
 
-  const quote = await fetchQuotePrices().catch(() => ({
+  const quote = await fetchQuotePrices(quotePrefill(dsByNetwork)).catch(() => ({
     prices: { SOL: null, ETH: null, fetchedAt: Date.now() },
     warnings: ["Quote reference prices unavailable."],
   }));
@@ -242,6 +296,98 @@ export async function fetchTokenDetail(query: TokenQuery): Promise<TokenDetailRe
   return {
     market,
     dexName,
+    quotePrices: quote.prices,
+    fetchedAt: Date.now(),
+    stale,
+    warnings: [...new Set(warnings)],
+  };
+}
+
+export interface QuoteRefInput {
+  network: NetworkId;
+  pool: string;
+}
+
+/**
+ * Batched price refresh for tracked tokens and open positions.
+ *
+ * One GeckoTerminal multi-pool request per network (up to 30 pools each) plus one
+ * DEX Screener batch for logos/socials and a free ride for the SOL/ETH reference
+ * prices. Polling N tokens therefore costs one call per network, not N.
+ */
+export async function fetchTokenQuotes(refs: QuoteRefInput[]): Promise<QuotesResponse> {
+  const grouped = new Map<NetworkId, string[]>();
+  for (const ref of refs) {
+    const list = grouped.get(ref.network) ?? [];
+    if (!list.includes(ref.pool)) list.push(ref.pool);
+    grouped.set(ref.network, list);
+  }
+
+  const warnings: string[] = [];
+  let stale = false;
+  let firstError: unknown = null;
+  let failedNetworks = 0;
+  const tokens: MarketToken[] = [];
+  const dsByNetwork = new Map<NetworkId, DsPair[]>();
+
+  await Promise.all(
+    [...grouped.entries()].map(async ([network, poolAddresses]) => {
+      const pools = poolAddresses.slice(0, 30);
+      if (pools.length < poolAddresses.length) {
+        warnings.push(
+          `${NETWORKS[network].label}: only the first 30 pools are refreshed per request; the rest use their last known price.`,
+        );
+      }
+      let gtPoolsResult: GtPool[] = [];
+      try {
+        const result = await gtPoolsMulti(network, pools);
+        if (result.stale) stale = true;
+        gtPoolsResult = result.value;
+      } catch (error) {
+        failedNetworks += 1;
+        if (firstError == null) firstError = error;
+        warnings.push(`${NETWORKS[network].label} quotes unavailable: ${errorMessage(error)}`);
+        return;
+      }
+
+      try {
+        const baseAddresses = gtPoolsResult
+          .map((pool) => tokenAddressFromRelationshipId(pool.relationships?.base_token?.data?.id, network))
+          .filter((address): address is string => Boolean(address));
+        const quoteAddress = quoteAddressFor(network);
+        const addresses = (quoteAddress ? [quoteAddress, ...baseAddresses] : baseAddresses).slice(0, 30);
+        const ds = await dsTokenPairs(network, addresses);
+        if (ds.stale) stale = true;
+        dsByNetwork.set(network, ds.pairs);
+      } catch (error) {
+        warnings.push(`${NETWORKS[network].label} logos/socials unavailable: ${errorMessage(error)}`);
+      }
+
+      for (const pool of gtPoolsResult) {
+        const tokenId = tokenAddressFromRelationshipId(pool.relationships?.base_token?.data?.id, network);
+        const dsPair = pickDsPair(dsByNetwork.get(network) ?? [], pool.attributes.address, tokenId);
+        const token = normalizeGtPool(pool, network, dsPair);
+        if (token) tokens.push(token);
+      }
+    }),
+  );
+
+  // If nothing could be refreshed, surface the real error (429/502 + retryAfterMs)
+  // so the client backs off instead of treating every token as unpriced.
+  if (tokens.length === 0 && failedNetworks > 0 && failedNetworks === grouped.size) {
+    throw firstError instanceof UpstreamError
+      ? firstError
+      : new UpstreamError("http", `Quote refresh failed: ${errorMessage(firstError)}`, { status: 502 });
+  }
+
+  const quote = await fetchQuotePrices(quotePrefill(dsByNetwork)).catch(() => ({
+    prices: { SOL: null, ETH: null, fetchedAt: Date.now() },
+    warnings: ["Quote reference prices unavailable."],
+  }));
+  warnings.push(...quote.warnings);
+
+  return {
+    tokens: dedupeTokens(tokens),
     quotePrices: quote.prices,
     fetchedAt: Date.now(),
     stale,

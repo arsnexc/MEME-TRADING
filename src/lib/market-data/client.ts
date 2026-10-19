@@ -4,13 +4,16 @@ import {
   fetchQuotePrices,
   fetchSearch,
   fetchTokenDetail,
+  fetchTokenQuotes,
   fetchTrades,
+  type QuoteRefInput,
   type TokenQuery,
 } from "./service";
 import { UpstreamError } from "./types";
 import type {
   MarketsResponse,
   OhlcvResponse,
+  QuotesResponse,
   SearchResponse,
   TradesResponse,
   TokenDetailResponse,
@@ -27,10 +30,12 @@ export interface Fetched<T> {
 
 class ProxyError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  retryAfterMs: number | null;
+  constructor(message: string, status: number, retryAfterMs: number | null = null) {
     super(message);
     this.name = "ProxyError";
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -47,6 +52,18 @@ function shouldFallback(error: unknown): boolean {
   return error instanceof TypeError;
 }
 
+/** A 429 is transient: it should not pin the whole app to the direct transport. */
+function isRateLimited(error: unknown): boolean {
+  if (error instanceof ProxyError) return error.status === 429;
+  if (error instanceof UpstreamError) return error.status === 429;
+  return false;
+}
+
+function retryAfterOf(error: unknown): number | null {
+  if (error instanceof ProxyError || error instanceof UpstreamError) return error.retryAfterMs;
+  return null;
+}
+
 async function proxyJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
@@ -60,13 +77,21 @@ async function proxyJson<T>(path: string, signal?: AbortSignal): Promise<T> {
     });
     if (!response.ok) {
       let message = `Proxy request failed (HTTP ${response.status}).`;
+      let retryAfterMs: number | null = null;
       try {
-        const body = (await response.json()) as { error?: { message?: string } };
+        const body = (await response.json()) as {
+          error?: { message?: string; retryAfterMs?: number | null };
+        };
         if (body?.error?.message) message = body.error.message;
+        if (typeof body?.error?.retryAfterMs === "number") retryAfterMs = body.error.retryAfterMs;
       } catch {
         // Ignore non-JSON error bodies.
       }
-      throw new ProxyError(message, response.status);
+      if (retryAfterMs == null) {
+        const header = Number(response.headers.get("retry-after"));
+        if (Number.isFinite(header) && header > 0) retryAfterMs = header * 1000;
+      }
+      throw new ProxyError(message, response.status, retryAfterMs);
     }
     return (await response.json()) as T;
   } finally {
@@ -81,6 +106,7 @@ async function withFallback<T>(
   signal?: AbortSignal,
 ): Promise<Fetched<T>> {
   const now = Date.now();
+  let proxyFailure: unknown = null;
   if (now >= preferDirectUntil) {
     try {
       const data = await proxyJson<T>(path, signal);
@@ -88,14 +114,23 @@ async function withFallback<T>(
     } catch (error) {
       if (signal?.aborted) throw error;
       if (!shouldFallback(error)) throw error;
-      preferDirectUntil = Date.now() + 60_000;
+      proxyFailure = error;
+      // Back off the proxy for infrastructure failures, but keep retrying it on
+      // rate limits so one hot minute does not pin the session to the provider.
+      if (!isRateLimited(error)) preferDirectUntil = Date.now() + 20_000;
     }
   }
   try {
     const data = await direct();
     return { data, transport: "direct", receivedAt: Date.now() };
   } catch (error) {
-    if (error instanceof UpstreamError) throw error;
+    // Surface the most actionable failure. An upstream 429 carries the real
+    // Retry-After, which the server-side limiter can only estimate.
+    if (error instanceof UpstreamError) {
+      if (error.retryAfterMs == null && retryAfterOf(proxyFailure) != null) throw proxyFailure;
+      throw error;
+    }
+    if (proxyFailure instanceof ProxyError) throw proxyFailure;
     throw new UpstreamError(
       "network",
       "Market data could not be loaded from the proxy or the provider. Check connectivity and retry.",
@@ -125,6 +160,25 @@ export function fetchTokenClient(query: TokenQuery & { signal?: AbortSignal }): 
     `/api/token?${search.toString()}`,
     () => fetchTokenDetail({ network: query.network, pool: query.pool, token: query.token }),
     query.signal,
+  );
+}
+
+/**
+ * Batched price refresh. One request per (up to) 30 pools on a network instead of
+ * one request per token — this is what keeps portfolio/tracker polling inside
+ * the GeckoTerminal budget.
+ */
+export function fetchQuotesClient(params: {
+  refs: QuoteRefInput[];
+  signal?: AbortSignal;
+}): Promise<Fetched<QuotesResponse>> {
+  const search = new URLSearchParams({
+    pools: params.refs.map((ref) => `${ref.network}:${ref.pool}`).join(","),
+  });
+  return withFallback(
+    `/api/quotes?${search.toString()}`,
+    () => fetchTokenQuotes(params.refs),
+    params.signal,
   );
 }
 

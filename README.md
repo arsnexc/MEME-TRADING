@@ -30,10 +30,22 @@ MEMESCOPE is a Next.js app that pairs **real, provider-sourced memecoin market d
 
 | Provider | Used for | Limits respected |
 | --- | --- | --- |
-| [GeckoTerminal](https://www.geckoterminal.com/dex-api) | Pool lists, pool detail, real OHLCV, trades, token USD prices, locked liquidity | 30 req/min documented; client limiter caps at 24/min |
-| [DEX Screener](https://docs.dexscreener.com/api/reference) | Logos, socials, circulating market cap, liquidity, search results | 300 req/min documented; limiter caps at 220/min |
+| [GeckoTerminal](https://www.geckoterminal.com/dex-api) | Pool lists, pool detail, real OHLCV, trades, locked liquidity | 30 req/min documented; limiter caps at 24/min |
+| [DEX Screener](https://docs.dexscreener.com/api/reference) | Logos, socials, circulating market cap, liquidity, search, SOL/ETH reference prices | 300 req/min documented; limiter caps at 200/min |
 
-Both are public and keyless. Requests are cached in-memory with stale-while-revalidate and single-flight de-duplication, so polling does not multiply upstream calls.
+Both are public and keyless. GeckoTerminal's budget is the scarce one, so it is reserved for pools, candles and trades: a discovery refresh costs **one GeckoTerminal call per requested network**, and SOL/ETH reference prices ride along in the DEX Screener batch that already fetches logos. A terminal page costs seven GeckoTerminal calls per minute (pool 30 s, candles 20 s, trades 30 s).
+
+### When a provider rate-limits
+
+The limiter is designed to degrade instead of blanking the screen:
+
+1. **Bounded queue** — if the local window is full, a request waits up to 2.5 s for the oldest slot to age out before returning `429`.
+2. **Cooldown** — an upstream `429` (with `Retry-After` when sent) pauses that provider for 15 s, doubling up to 120 s on repeated strikes. Later calls fail fast and never hammer upstream.
+3. **Stale data** — expired cache entries are still served with `stale: true`; pool lists also revalidate in the background, so the scanner keeps rendering while a refresh is in flight.
+4. **Client backoff** — the polling hooks honour `retryAfterMs`, back off exponentially for rate limits, and show a live *“retrying in Ns”* countdown. Manual refresh always overrides the timer.
+5. **Typed errors** — the JSON error body carries `retryAfterMs` and the response sets `Retry-After`, so any client can back off correctly.
+
+Requests are cached in-memory with single-flight de-duplication, so concurrent tabs and identical polls do not multiply upstream calls.
 
 ---
 
@@ -123,6 +135,7 @@ All routes return JSON and validate input.
 | `GET /api/markets` | `tab=trending\|top\|radar\|streamers`, `networks=solana,eth,base` | `{ tokens, tab, fetchedAt, quotePrices, stale, warnings }` |
 | `GET /api/token` | `network`, `pool`, optional `token` | `{ market, dexName, quotePrices, fetchedAt, stale, warnings }` |
 | `GET /api/ohlcv` | `network`, `pool`, `timeframe=1m\|5m\|15m\|1h\|4h\|1d` | `{ candles, timeframe, fetchedAt, stale, source, warnings }` |
+| `GET /api/quotes` | `pools` — comma-separated `network:pool` refs (≤ 30 per network, ≤ 90 total) | `{ tokens, quotePrices, fetchedAt, stale, warnings }` |
 | `GET /api/trades` | `network`, `pool`, optional `limit` (10–300) | `{ trades, fetchedAt, stale, warnings, window }` |
 | `GET /api/search` | `q` (min 2 chars) | `{ tokens, fetchedAt, query }` |
 | `GET /api/quote-prices` | — | `{ prices: { SOL, ETH, fetchedAt }, warnings }` |
@@ -130,10 +143,10 @@ All routes return JSON and validate input.
 Errors use a consistent shape:
 
 ```json
-{ "error": { "code": "rate_limited", "message": "…", "provider": "geckoterminal" } }
+{ "error": { "code": "rate_limited", "message": "…", "provider": "geckoterminal", "retryAfterMs": 15000 } }
 ```
 
-`400` invalid input, `404` unknown pool/token, `429` provider or local rate limit (`Retry-After: 20`), `502/504` upstream failure.
+`400` invalid input, `404` unknown pool/token, `429` provider or local rate limit (`Retry-After` in seconds, plus `retryAfterMs` in the body), `502/504` upstream failure. Successful responses expose `X-RateLimit-Remaining` / `X-RateLimit-Limit` for the server's GeckoTerminal window.
 
 ### Browser transport
 
@@ -147,6 +160,7 @@ The suite runs in Node/jsdom with mocked upstream responses:
 
 - **`tests/trading.test.ts`** — decimal normalisation, input validation, buy/sell plans, fees and slippage, priority fees, limit triggers, unrealized PnL, store lifecycle (buy → mark → partial/full sell), per-quote isolation, insufficient balance, limit fills, cancellation, reset and persistence validation.
 - **`tests/market-data.test.ts`** — normalization/merge of GeckoTerminal + DEX Screener payloads, FDV labelling, pair selection, dedupe, sorting/filtering/pagination, mocked service calls for markets, OHLCV dedupe/sort, trade side mapping, 429 mapping and network-filter validation.
+- **`tests/rate-limit.test.ts`** — local window exhaustion, cooldown after an upstream 429, cached responses not consuming budget, batched multi-pool quote refresh (one GeckoTerminal call for many pools), and SOL/ETH reference prices derived from DEX Screener instead of GeckoTerminal.
 - **`tests/ui.test.tsx`** — positions table (live vs stale sell blocking), order cancellation, callout limits and local save.
 - **`tests/execution.test.tsx`** — full market-buy flow through the order ticket, stale-price blocking, balance validation, limit placement, sell-without-position messaging.
 
@@ -156,11 +170,11 @@ Not covered: a real browser E2E run and a live-provider integration run (the bui
 
 ## Known limitations
 
-- **Polling, not WebSockets.** Prices refresh every 15–45 s depending on the surface; limit orders check every 25 s while a tab is open. Background monitoring stops when the app is closed.
+- **Polling, not WebSockets.** Prices refresh every 20–45 s depending on the surface; limit orders check every 25 s while a tab is open. Background monitoring stops when the app is closed. Portfolios and trackers poll through `/api/quotes`, which batches up to 30 pools per network into one upstream request.
 - **Trades are a provider-capped window.** Top-trader/early-buyer tables are derived from the returned page of trades, not a complete audit of the pool.
 - **No holder/creator/security oracle.** Holder concentration, mint/freeze authority status, dev holdings and bundle analysis are shown as unknown unless the provider exposes them (only locked liquidity is available).
 - **No derivatives, prediction markets or AI vision.** Those routes explain the missing integration rather than inventing data.
-- **Provider availability.** Public APIs can rate-limit or fail; the UI surfaces stale data, retries and warnings instead of hiding failures.
+- **Provider availability.** Public APIs can rate-limit or fail. The UI keeps the last good snapshot, labels it stale, and shows a retry countdown — it never fills the gap with demo data. If GeckoTerminal is fully exhausted, new pools cannot be listed because neither provider offers a keyless “all trending pools” endpoint.
 - **Display currency conversion** uses the provider's SOL/USD and ETH/USD references. If a reference is missing, the app stays in USD and says so.
 - **Local-only state.** Clearing browser storage resets the paper account and trackers. Export JSON before resetting if you want a record.
 

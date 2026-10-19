@@ -3,6 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Fetched, Transport } from "@/lib/market-data/client";
 
+/** Upper bound for provider-driven backoff so a tab always recovers eventually. */
+const MAX_RETRY_DELAY_MS = 180_000;
+
+function retryAfterOf(error: unknown): number | null {
+  if (typeof error !== "object" || error == null || !("retryAfterMs" in error)) return null;
+  const value = (error as { retryAfterMs?: unknown }).retryAfterMs;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
 export interface PollingQueryState<T> {
   data: T | null;
   loading: boolean;
@@ -12,6 +21,10 @@ export interface PollingQueryState<T> {
   lastUpdated: number | null;
   transport: Transport | null;
   stale: boolean;
+  /** Epoch ms of the next scheduled attempt after a failure (null when healthy). */
+  nextRetryAt: number | null;
+  /** Consecutive failures; drives the rate-limit backoff. */
+  retryAttempt: number;
 }
 
 export interface PollingQueryOptions {
@@ -44,6 +57,8 @@ export function usePollingQuery<T>(
     lastUpdated: null,
     transport: null,
     stale: false,
+    nextRetryAt: null,
+    retryAttempt: 0,
   });
 
   const mounted = useRef(true);
@@ -79,7 +94,12 @@ export function usePollingQuery<T>(
       lastUpdated: null,
       transport: null,
       stale: false,
+      nextRetryAt: null,
+      retryAttempt: 0,
     });
+
+    let failures = 0;
+    let delayForNext = intervalMs;
 
     const schedule = (delay: number) => {
       if (cancelled) return;
@@ -107,6 +127,8 @@ export function usePollingQuery<T>(
         const result = await fetcherRef.current(controller.signal);
         if (cancelled) return;
         hasDataForKey = true;
+        failures = 0;
+        delayForNext = intervalMs;
         setState({
           data: result.data,
           loading: false,
@@ -116,6 +138,8 @@ export function usePollingQuery<T>(
           lastUpdated: result.receivedAt,
           transport: result.transport,
           stale: false,
+          nextRetryAt: null,
+          retryAttempt: 0,
         });
       } catch (error) {
         if (cancelled || (error instanceof DOMException && error.name === "AbortError")) return;
@@ -124,6 +148,15 @@ export function usePollingQuery<T>(
             ? (error as { status: number }).status
             : null;
         const message = error instanceof Error ? error.message : "Market data request failed.";
+        failures += 1;
+        // Honour the provider's Retry-After when present, otherwise back off
+        // exponentially for rate limits and stay at the polling interval for
+        // ordinary failures.
+        const suggested = retryAfterOf(error);
+        const backoff =
+          suggested ?? (status === 429 ? intervalMs * 2 ** Math.min(failures, 4) : intervalMs);
+        delayForNext = Math.min(Math.max(backoff, intervalMs), MAX_RETRY_DELAY_MS);
+        const nextRetryAt = Date.now() + delayForNext;
         setState((prev) => ({
           ...prev,
           loading: false,
@@ -131,10 +164,12 @@ export function usePollingQuery<T>(
           error: message,
           errorStatus: status,
           stale: hasDataForKey,
+          nextRetryAt,
+          retryAttempt: failures,
         }));
       } finally {
         running.current = false;
-        if (!cancelled) schedule(intervalMs);
+        if (!cancelled) schedule(delayForNext);
       }
     };
 

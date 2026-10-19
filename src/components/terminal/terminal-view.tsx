@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RetryCountdown } from "@/components/ui/retry-countdown";
 import { TokenHeader } from "./token-header";
 import { ChartPanel } from "./chart-panel";
 import { BottomPanel } from "./bottom-panel";
@@ -58,7 +59,9 @@ export function TerminalView({
     [network, pool, tokenAddress],
   );
   const marketQuery = usePollingQuery<TokenDetailResponse>(`token:${network}:${pool}:${tokenAddress}`, marketFetcher, {
-    intervalMs: 15_000,
+    // Pool detail is the most expensive GeckoTerminal call on this page; the
+    // chart already provides sub-minute price updates.
+    intervalMs: 30_000,
   });
 
   const chartFetcher = useCallback(
@@ -74,7 +77,7 @@ export function TerminalView({
     [network, pool],
   );
   const tradesQuery = usePollingQuery(`trades:${network}:${pool}`, tradesFetcher, {
-    intervalMs: 20_000,
+    intervalMs: 30_000,
   });
 
   const detail = marketQuery.data;
@@ -283,7 +286,8 @@ export function TerminalView({
               <span className="text-muted">
                 {lastUpdated ? formatRelativeTime(lastUpdated, now) : "unknown age"}
               </span>
-              .
+              .{" "}
+              <RetryCountdown at={marketQuery.nextRetryAt} />
             </span>
           ) : null}
           {warnings.map((warning) => (

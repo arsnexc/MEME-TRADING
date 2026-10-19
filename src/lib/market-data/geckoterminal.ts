@@ -99,8 +99,37 @@ export async function gtPools(
   const key = `gt:${kind}:${network}:${page}`;
   const result = await cachedJson<GtPoolListResponse>(
     key,
-    kind === "trending" ? 25_000 : 20_000,
+    kind === "trending" ? 30_000 : 25_000,
     () => getJson<GtPoolListResponse>(`${GT_BASE}/networks/${gecko}/${path}?page=${page}`, { provider: "geckoterminal" }),
+  );
+  return {
+    value: Array.isArray(result.value?.data) ? result.value.data : [],
+    fetchedAt: result.fetchedAt,
+    stale: result.stale,
+  };
+}
+
+/**
+ * Batch pool lookup — one request for up to 30 pools on a network.
+ *
+ * This is what keeps the portfolios and trackers affordable: polling twelve
+ * tracked tokens used to cost twelve GeckoTerminal calls per cycle, which alone
+ * could exhaust the 24/min budget. The multi endpoint returns the same pool
+ * attributes and relationships, so normalization is identical.
+ */
+export async function gtPoolsMulti(network: NetworkId, poolAddresses: string[]): Promise<Timed<GtPool[]>> {
+  const unique = [...new Set(poolAddresses.filter(Boolean))].slice(0, 30);
+  if (unique.length === 0) return { value: [], fetchedAt: Date.now(), stale: false };
+  const gecko = NETWORKS[network].geckoId;
+  const key = `gt:pools:multi:${network}:${unique.map((p) => p.toLowerCase()).sort().join(",")}`;
+  const result = await cachedJson<GtPoolListResponse>(
+    key,
+    15_000,
+    () =>
+      getJson<GtPoolListResponse>(
+        `${GT_BASE}/networks/${gecko}/pools/multi/${unique.map(encodeURIComponent).join(",")}?include=base_token,quote_token,dex`,
+        { provider: "geckoterminal" },
+      ),
   );
   return {
     value: Array.isArray(result.value?.data) ? result.value.data : [],
@@ -113,7 +142,7 @@ export async function gtPool(network: NetworkId, poolAddress: string): Promise<T
   const gecko = NETWORKS[network].geckoId;
   const result = await cachedJson<GtPoolResponse>(
     `gt:pool:${network}:${poolAddress.toLowerCase()}`,
-    10_000,
+    25_000,
     () =>
       getJson<GtPoolResponse>(
         `${GT_BASE}/networks/${gecko}/pools/${encodeURIComponent(poolAddress)}?include=base_token,quote_token,dex`,
@@ -143,7 +172,7 @@ export async function gtOhlcv(
   const url = `${GT_BASE}/networks/${gecko}/pools/${encodeURIComponent(poolAddress)}/ohlcv/${path}?aggregate=${aggregate}&limit=${limit}&currency=usd&token=base`;
   const result = await cachedJson<GtOhlcvResponse>(
     `gt:ohlcv:${network}:${poolAddress.toLowerCase()}:${timeframe}`,
-    15_000,
+    18_000,
     () => getJson<GtOhlcvResponse>(url, { provider: "geckoterminal" }),
   );
 
@@ -174,7 +203,7 @@ export async function gtTrades(network: NetworkId, poolAddress: string): Promise
   const url = `${GT_BASE}/networks/${gecko}/pools/${encodeURIComponent(poolAddress)}/trades?trade_volume_in_usd_greater_than=0`;
   const result = await cachedJson<GtTradesResponse>(
     `gt:trades:${network}:${poolAddress.toLowerCase()}`,
-    15_000,
+    25_000,
     () => getJson<GtTradesResponse>(url, { provider: "geckoterminal" }),
   );
 

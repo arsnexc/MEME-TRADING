@@ -81,6 +81,22 @@ export async function dsSearch(query: string): Promise<TimedPairs> {
   };
 }
 
+/**
+ * Read a token's USD price from a DEX Screener batch response.
+ *
+ * `priceUsd` always describes the pair's base token, so we only accept pairs
+ * where the requested address is the base. When several pools match we take the
+ * deepest one — that is the price the aggregator itself surfaces.
+ */
+export function priceFromPairs(pairs: DsPair[], tokenAddress: string): number | null {
+  const target = tokenAddress.toLowerCase();
+  const matching = pairs.filter((p) => p.baseToken?.address?.toLowerCase() === target);
+  if (matching.length === 0) return null;
+  const deepest = [...matching].sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
+  const parsed = Number(deepest?.priceUsd);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 /** Choose the DEX Screener pair with the deepest liquidity (optionally the one matching a pool). */
 export function pickDsPair(pairs: DsPair[], pool?: string | null, tokenAddress?: string | null): DsPair | null {
   if (pairs.length === 0) return null;

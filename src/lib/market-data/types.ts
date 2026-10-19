@@ -80,6 +80,15 @@ export interface MarketsResponse {
   warnings: string[];
 }
 
+/** Batched price refresh for portfolios and trackers (one call per network). */
+export interface QuotesResponse {
+  tokens: MarketToken[];
+  quotePrices: QuotePrices;
+  fetchedAt: number;
+  stale: boolean;
+  warnings: string[];
+}
+
 export interface TokenDetailResponse {
   market: MarketToken;
   dexName: string | null;
@@ -145,13 +154,20 @@ export class UpstreamError extends Error {
   code: UpstreamErrorCode;
   status: number;
   provider: string;
+  /** Suggested client backoff in milliseconds (set for rate limits). */
+  retryAfterMs: number | null;
 
-  constructor(code: UpstreamErrorCode, message: string, opts: { status?: number; provider?: string } = {}) {
+  constructor(
+    code: UpstreamErrorCode,
+    message: string,
+    opts: { status?: number; provider?: string; retryAfterMs?: number } = {},
+  ) {
     super(message);
     this.name = "UpstreamError";
     this.code = code;
     this.status = opts.status ?? (code === "rate_limited" ? 429 : 502);
     this.provider = opts.provider ?? "unknown";
+    this.retryAfterMs = opts.retryAfterMs ?? null;
   }
 }
 

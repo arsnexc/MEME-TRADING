@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/spinner";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
+import { RetryCountdown } from "@/components/ui/retry-countdown";
 import { useNow } from "@/hooks/use-now";
 import { usePollingQuery } from "@/hooks/use-polling-query";
 import {
@@ -144,7 +145,7 @@ export function DiscoveryView() {
 
   const transportNote =
     marketQuery.transport === "direct"
-      ? "Browser transport: the server proxy was unavailable, so the provider is queried directly. Provider rate limits apply."
+      ? "Browser transport: the server proxy was unavailable or rate-limited, so the provider is queried directly. Provider rate limits apply."
       : "Server proxy with caching and request de-duplication.";
 
   const showDataState = fetchEnabled;
@@ -175,6 +176,11 @@ export function DiscoveryView() {
           {marketQuery.transport === "direct" ? (
             <Tooltip content={transportNote}>
               <Badge tone="warn">direct</Badge>
+            </Tooltip>
+          ) : null}
+          {marketQuery.data?.stale ? (
+            <Tooltip content="At least one network list was served from the server cache after a failed refresh. Rows may be older than the poll interval.">
+              <Badge tone="warn">cached snapshot</Badge>
             </Tooltip>
           ) : null}
           <span className="num text-2xs text-faint">
@@ -246,15 +252,28 @@ export function DiscoveryView() {
             />
 
             {marketQuery.error ? (
-              <div className="flex items-center gap-2 border-b border-warn/30 bg-warn/5 px-3 py-1.5 text-2xs text-warn">
+              <div
+                className={cn(
+                  "flex items-center gap-2 border-b px-3 py-1.5 text-2xs",
+                  marketQuery.errorStatus === 429
+                    ? "border-warn/30 bg-warn/5 text-warn"
+                    : "border-sell/30 bg-sell/5 text-sell",
+                )}
+                role="status"
+                title={marketQuery.error}
+              >
                 <AlertTriangle className="h-3 w-3 shrink-0" />
                 <span className="min-w-0 flex-1">
-                  {marketQuery.errorStatus === 429 ? "Market-data rate limit reached. " : "Market data request failed. "}
-                  {marketQuery.error}
-                  {tokens.length > 0 ? " Showing the last successful snapshot." : ""}
+                  {marketQuery.errorStatus === 429
+                    ? "Market-data provider rate limit reached."
+                    : "Market data request failed."}{" "}
+                  <RetryCountdown at={marketQuery.nextRetryAt} />
+                  {tokens.length > 0
+                    ? " Showing the last successful snapshot."
+                    : " No cached snapshot is available yet."}
                 </span>
                 <Button size="xs" variant="outline" onClick={() => marketQuery.refresh()}>
-                  Retry
+                  Retry now
                 </Button>
               </div>
             ) : null}
