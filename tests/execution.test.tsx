@@ -122,6 +122,44 @@ describe("execution panel", () => {
     expect(usePaperStore.getState().positions).toHaveLength(0);
   });
 
+  it("switches between the order ticket and the depth ladder", () => {
+    renderPanel({
+      trades: [
+        {
+          id: "t1",
+          side: "buy",
+          // buildDepth buckets in quote currency: 0.01 USD / 100 = 0.0001 SOL.
+          priceUsd: 0.0001,
+          baseAmount: 100,
+          valueUsd: 1,
+          wallet: "wallet",
+          txHash: "sig",
+          at: Date.now(),
+        },
+      ],
+    });
+
+    expect(screen.getByRole("button", { name: "Sell" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Buy" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Market" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Depth" }));
+    expect(screen.getByText(/trade-flow ladder, not a real order book/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sell" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Order" }));
+    expect(screen.getByRole("button", { name: "Sell" })).toBeInTheDocument();
+  });
+
+  it("drives the amount from the balance slider", () => {
+    renderPanel();
+    const slider = screen.getByLabelText(/percent of cash to spend/i);
+    fireEvent.change(slider, { target: { value: "50" } });
+    const input = screen.getByLabelText(/amount \(sol\)/i) as HTMLInputElement;
+    expect(Number(input.value)).toBeGreaterThan(20);
+    expect(Number(input.value)).toBeLessThan(30);
+  });
+
   it("requires an open position before selling", () => {
     renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Sell" }));

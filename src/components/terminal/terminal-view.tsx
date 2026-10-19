@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, RefreshCw, WifiOff } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -385,16 +384,6 @@ export function TerminalView({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-border bg-panel/40 px-3 py-1 text-2xs text-faint">
-        <Badge tone="warn">SIMULATION</Badge>
-        <span>
-          {market.symbol} on {market.network} · {market.quote} paper account · all fills are local and reversible
-          only by resetting the account.
-        </span>
-        <Link href="/" className="ml-auto text-muted hover:text-fg">
-          ← Back to discovery
-        </Link>
-      </div>
     </div>
   );
 }

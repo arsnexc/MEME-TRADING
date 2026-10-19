@@ -331,7 +331,7 @@ export function PortfolioView() {
                 <span className="num text-muted">{formatQuote(account.value, quote, 3)}</span>
                 <span className="text-faint">positions =</span>
                 <span className="num font-medium text-fg">{formatQuote(equity, quote, 3)}</span>
-                <span className="text-faint">{quote} total</span>
+                <span className="text-faint">total</span>
               </div>
               <p className="mt-1 text-2xs leading-relaxed text-faint">
                 A buy moves cash into a position, so{" "}
