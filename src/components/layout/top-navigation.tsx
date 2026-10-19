@@ -14,6 +14,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useHydrated } from "@/stores/hydration";
 import { usePaperStore } from "@/stores/paper-trading";
+import { formatQuote } from "@/lib/formatting";
 import { cn } from "@/lib/utils";
 
 /**
@@ -157,9 +158,9 @@ export function TopNavigation() {
             >
               <Wallet className="h-3 w-3" />
               <span className="text-faint">cash</span>
-              <span className="num">{hydrated ? `${balances.SOL.toFixed(2)} SOL` : "— SOL"}</span>
+              <span className="num">{hydrated ? formatQuote(balances.SOL, "SOL", 4) : "— SOL"}</span>
               <span className="text-faint">·</span>
-              <span className="num">{hydrated ? `${balances.ETH.toFixed(2)} ETH` : "— ETH"}</span>
+              <span className="num">{hydrated ? formatQuote(balances.ETH, "ETH", 4) : "— ETH"}</span>
             </Link>
           </Tooltip>
           <Tooltip content="Every order is simulated. Deposits and withdrawals are disabled because no wallet can be connected.">
@@ -200,13 +201,6 @@ export function TopNavigation() {
             </Link>
           );
         })}
-        <span className="ml-auto flex shrink-0 items-center gap-1 pl-2 text-2xs text-faint">
-          {COMING_SOON.map((item) => (
-            <Link key={item.href} href={item.href} className="px-1 hover:text-muted" title={item.note}>
-              {item.label}
-            </Link>
-          ))}
-        </span>
       </nav>
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
     </header>
