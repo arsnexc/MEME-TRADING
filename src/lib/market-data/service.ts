@@ -154,7 +154,10 @@ export async function fetchMarkets(params: {
   const kind = tab === "radar" ? "new" : "trending";
 
   if (tab === "streamers") {
-    const quote = await fetchQuotePrices();
+    const quote = await fetchQuotePrices().catch(() => ({
+      prices: { SOL: null, ETH: null, fetchedAt: Date.now() },
+      warnings: [] as string[],
+    }));
     return {
       tokens: [],
       tab,

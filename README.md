@@ -60,6 +60,7 @@ Requests are cached in-memory with single-flight de-duplication, so concurrent t
 - **Realized PnL** = net proceeds − quantity × average entry price.
 - **Limit orders** fill only when a fresh provider tick crosses the limit; they fill **at the limit price** with the fee rate and slippage captured at placement. Orders are monitored every 25 seconds while the app is open (`PriceWatcher`), never on stale snapshots.
 - **Take profit / stop loss.** Optional per-position levels, set as percentages on the buy ticket or as absolute prices later from the positions table. Levels are stored as absolute quote-currency prices, so a refresh never moves them; if you average into a position without entering new levels, the original percentages are re-applied to the new average entry. On every fresh tick the engine checks take profit first (price ≥ level) then stop loss (price ≤ level), and closes the **whole** remaining position with the normal fee and slippage model. Fills carry `trigger: "take-profit" | "stop-loss"` and are labelled in the history. A 5-second grace after opening or editing prevents slippage from firing a tight stop instantly.
+- **Account bar.** Cash, equity, realized and unrealized PnL, position value, open positions, fees and return-since-start are always visible for both quote accounts, marked at the last provider price saved on the device. It is the fastest way to see that a buy moved cash into a position instead of losing it.
 - **Live chart.** Candle history still comes from GeckoTerminal every 20 s and is never synthesised. Between those polls the terminal asks `GET /api/price` (one DEX Screener pair read, no-store, ~3 s cadence, paused in hidden tabs) and rewrites only the **forming** candle, opening a single next candle when the bucket rolls over. The same tick drives paper limit fills and take-profit / stop-loss checks, so the chart and the engine agree. If the ticker errors, the last price stays and the chart shows a stale note rather than inventing candles.
 - **Price freshness.** Orders are blocked when the last price is older than 60 seconds. Stale positions are marked and selling is disabled until a fresh price arrives. Automatic exits use the same rule: they only run on fresh provider ticks.
 - **Persistence.** Accounts, positions, orders, trades, watchlist and callouts live in versioned `localStorage` (`memescope.*.v1`). Every restored snapshot is validated field-by-field; corrupted payloads are dropped in favour of a fresh account rather than rendered.
@@ -76,9 +77,13 @@ The two numbers users ask about are deliberately different:
 
 ---
 
-### Theme
+### Theme and layout
 
-The interface is a neutral pure-black palette (`#000` base, `#0a0a0a`–`#1a1a1a` panels, `#262626` borders) with green/red reserved for buy/sell and PnL. Network brand colours are no longer used for chips or text; a network is identified by its name and tiny neutral badge only.
+The terminal follows a TradingView-style layout: one dense top bar (brand, destinations, search, paper cash), an instrument strip with the live price and pool metrics, the chart with a left drawing rail and a bottom timeframe strip, a right-hand order panel with **Sell / Buy** price buttons, **Market / Limit / Advanced** tabs, a balance slider, **Exits** (take profit / stop loss) and a full-width submit button, and a persistent account bar across the bottom.
+
+Two tabs share the right panel: **Order** (the ticket) and **Depth** — a ladder aggregated from the most recent public trades, explicitly labelled as trade flow rather than a real order book. We never claim resting liquidity the providers do not give us.
+
+Palette: pure black base (`#000`), `#0b0b0b` chrome, `#121212`–`#1a1a1a` panels and `#262626` borders, with market colours `#0ecb81` up / `#f23645` down and `#2962ff` on the buy side, matching the reference terminal. Network brand colours are not used for chips or text; a network is identified by its name and a neutral badge.
 
 ---
 

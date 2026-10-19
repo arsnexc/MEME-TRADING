@@ -62,7 +62,7 @@ export function TerminalView({
   const marketQuery = usePollingQuery<TokenDetailResponse>(`token:${network}:${pool}:${tokenAddress}`, marketFetcher, {
     // Pool detail is the most expensive GeckoTerminal call on this page; the
     // chart already provides sub-minute price updates.
-    intervalMs: 30_000,
+    intervalMs: 45_000,
   });
 
   const chartFetcher = useCallback(
@@ -70,7 +70,7 @@ export function TerminalView({
     [network, pool, timeframe],
   );
   const chartQuery = usePollingQuery(`ohlcv:${network}:${pool}:${timeframe}`, chartFetcher, {
-    intervalMs: 20_000,
+    intervalMs: 30_000,
   });
 
   const tradesFetcher = useCallback(
@@ -78,7 +78,7 @@ export function TerminalView({
     [network, pool],
   );
   const tradesQuery = usePollingQuery(`trades:${network}:${pool}`, tradesFetcher, {
-    intervalMs: 30_000,
+    intervalMs: 45_000,
   });
 
   const detail = marketQuery.data;
@@ -327,7 +327,7 @@ export function TerminalView({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_336px]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_304px]">
         <div className="min-w-0 xl:col-start-1 xl:row-start-1">
           <ChartPanel
             symbol={market.symbol}
@@ -350,7 +350,7 @@ export function TerminalView({
           />
         </div>
 
-        <div className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:sticky xl:top-11 xl:max-h-[calc(100dvh-44px)] xl:overflow-y-auto xl:border-l xl:border-border panel-scroll">
+        <div className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:sticky xl:top-11 xl:max-h-[calc(100dvh-108px)] xl:overflow-y-auto xl:border-l xl:border-border panel-scroll">
           <ExecutionPanel
             token={tokenRef}
             market={market}

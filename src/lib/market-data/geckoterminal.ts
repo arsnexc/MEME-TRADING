@@ -99,7 +99,7 @@ export async function gtPools(
   const key = `gt:${kind}:${network}:${page}`;
   const result = await cachedJson<GtPoolListResponse>(
     key,
-    kind === "trending" ? 30_000 : 25_000,
+    kind === "trending" ? 55_000 : 45_000,
     () => getJson<GtPoolListResponse>(`${GT_BASE}/networks/${gecko}/${path}?page=${page}`, { provider: "geckoterminal" }),
   );
   return {
@@ -124,7 +124,7 @@ export async function gtPoolsMulti(network: NetworkId, poolAddresses: string[]):
   const key = `gt:pools:multi:${network}:${unique.map((p) => p.toLowerCase()).sort().join(",")}`;
   const result = await cachedJson<GtPoolListResponse>(
     key,
-    15_000,
+    30_000,
     () =>
       getJson<GtPoolListResponse>(
         `${GT_BASE}/networks/${gecko}/pools/multi/${unique.map(encodeURIComponent).join(",")}?include=base_token,quote_token,dex`,
@@ -142,7 +142,7 @@ export async function gtPool(network: NetworkId, poolAddress: string): Promise<T
   const gecko = NETWORKS[network].geckoId;
   const result = await cachedJson<GtPoolResponse>(
     `gt:pool:${network}:${poolAddress.toLowerCase()}`,
-    25_000,
+    40_000,
     () =>
       getJson<GtPoolResponse>(
         `${GT_BASE}/networks/${gecko}/pools/${encodeURIComponent(poolAddress)}?include=base_token,quote_token,dex`,
@@ -172,7 +172,7 @@ export async function gtOhlcv(
   const url = `${GT_BASE}/networks/${gecko}/pools/${encodeURIComponent(poolAddress)}/ohlcv/${path}?aggregate=${aggregate}&limit=${limit}&currency=usd&token=base`;
   const result = await cachedJson<GtOhlcvResponse>(
     `gt:ohlcv:${network}:${poolAddress.toLowerCase()}:${timeframe}`,
-    18_000,
+    25_000,
     () => getJson<GtOhlcvResponse>(url, { provider: "geckoterminal" }),
   );
 
@@ -203,7 +203,7 @@ export async function gtTrades(network: NetworkId, poolAddress: string): Promise
   const url = `${GT_BASE}/networks/${gecko}/pools/${encodeURIComponent(poolAddress)}/trades?trade_volume_in_usd_greater_than=0`;
   const result = await cachedJson<GtTradesResponse>(
     `gt:trades:${network}:${poolAddress.toLowerCase()}`,
-    25_000,
+    40_000,
     () => getJson<GtTradesResponse>(url, { provider: "geckoterminal" }),
   );
 

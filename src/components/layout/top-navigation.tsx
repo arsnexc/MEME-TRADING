@@ -3,11 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, Command, Search, Settings2, Wallet } from "lucide-react";
+import { ChevronDown, Clock, Command, Search, Settings2, Wallet } from "lucide-react";
 import { SearchDialog } from "@/components/layout/search-dialog";
 import { SettingsDialog } from "@/components/layout/settings-dialog";
-import { MarketStatus } from "@/components/layout/market-status";
-import { QuoteSelector } from "@/components/layout/quote-selector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -18,13 +16,14 @@ import { formatQuote } from "@/lib/formatting";
 import { cn } from "@/lib/utils";
 
 /**
- * Four destinations that actually do something, in the order a new user needs
- * them: find a token, see what is moving, keep a watchlist, check the account.
- * Everything else lives under "More" and is explicitly labelled as not built.
+ * Terminal chrome, modelled on the reference trading terminal: one dense row
+ * with the brand, the working destinations, a symbol/search box and the paper
+ * account on the right. Everything that does not work in this build lives under
+ * "More" and says so.
  */
 const NAV_ITEMS = [
   { href: "/", label: "Discover", hint: "Scan tokens and open a chart" },
-  { href: "/pulse", label: "Market pulse", hint: "Volume, movers and new pools" },
+  { href: "/pulse", label: "Pulse", hint: "Volume, movers and new pools" },
   { href: "/trackers", label: "Watchlist", hint: "Tokens and notes saved in this browser" },
   { href: "/portfolio", label: "Portfolio", hint: "Cash, positions, orders and history" },
 ];
@@ -37,15 +36,11 @@ const COMING_SOON = [
 
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2" aria-label="MEMESCOPE home">
-      <span className="relative flex h-6 w-6 items-center justify-center rounded-[2px] border border-accent/40 bg-accent/10">
-        <span className="absolute inset-0 grid-lines opacity-30" aria-hidden="true" />
-        <span className="relative text-[11px] font-black tracking-tighter text-[#f5f5f5]">M</span>
+    <Link href="/" className="flex items-center gap-1.5 pr-1" aria-label="MEMESCOPE home">
+      <span className="flex h-6 w-6 items-center justify-center rounded-[3px] bg-accent text-[11px] font-black leading-none text-black">
+        M
       </span>
-      <span className="hidden flex-col leading-none sm:flex">
-        <span className="text-[12px] font-semibold tracking-[0.08em] text-fg">MEMESCOPE</span>
-        <span className="mt-0.5 text-[9px] uppercase tracking-[0.16em] text-faint">paper terminal</span>
-      </span>
+      <span className="hidden text-[11px] font-semibold tracking-[0.1em] text-fg sm:inline">MEMESCOPE</span>
     </Link>
   );
 }
@@ -72,10 +67,11 @@ export function TopNavigation() {
   const soonActive = COMING_SOON.some((item) => isActive(item.href));
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur supports-[backdrop-filter]:bg-bg/85">
-      <div className="flex h-11 items-center gap-3 px-2.5 sm:px-3">
+    <header className="sticky top-0 z-40 border-b border-border bg-[#0b0b0b]">
+      <div className="flex h-11 items-center gap-1 px-2">
         <Logo />
-        <nav aria-label="Primary" className="hidden min-w-0 flex-1 items-center gap-0.5 lg:flex">
+
+        <nav aria-label="Primary" className="hidden min-w-0 flex-1 items-center lg:flex">
           {NAV_ITEMS.map((item) => {
             const active = isActive(item.href);
             return (
@@ -84,13 +80,13 @@ export function TopNavigation() {
                 href={item.href}
                 title={item.hint}
                 className={cn(
-                  "relative flex h-11 items-center px-2.5 text-xs font-medium transition-colors",
+                  "relative flex h-11 items-center px-2 text-xs font-medium transition-colors",
                   active ? "text-fg" : "text-muted hover:text-fg",
                 )}
                 aria-current={active ? "page" : undefined}
               >
                 {item.label}
-                {active ? <span className="absolute inset-x-2.5 bottom-0 h-[1.5px] bg-accent" /> : null}
+                {active ? <span className="absolute inset-x-2 bottom-0 h-[2px] bg-fg" /> : null}
               </Link>
             );
           })}
@@ -99,7 +95,7 @@ export function TopNavigation() {
               <button
                 type="button"
                 className={cn(
-                  "flex h-11 items-center gap-1 px-2.5 text-xs font-medium transition-colors",
+                  "flex h-11 items-center gap-1 px-2 text-xs font-medium transition-colors",
                   soonActive ? "text-fg" : "text-faint hover:text-muted",
                 )}
               >
@@ -126,29 +122,31 @@ export function TopNavigation() {
             </PopoverContent>
           </Popover>
         </nav>
-        <div className="ml-auto flex items-center gap-1.5">
+
+        <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="flex h-7 items-center gap-1.5 rounded-sm border border-border bg-panel px-2 text-2xs text-muted transition-colors hover:border-border-strong hover:text-fg"
+            className="flex h-7 w-8 items-center gap-1.5 rounded-sm border border-border bg-panel px-2 text-2xs text-muted transition-colors hover:border-border-strong hover:text-fg sm:w-44 lg:w-56"
             aria-label="Search tokens"
           >
-            <Search className="h-3 w-3" />
-            <span className="hidden sm:inline">Search</span>
-            <kbd className="hidden items-center gap-0.5 text-faint md:flex">
+            <Search className="h-3 w-3 shrink-0" />
+            <span className="hidden truncate sm:inline">Search token…</span>
+            <kbd className="ml-auto hidden items-center gap-0.5 text-faint md:flex">
               <Command className="h-2.5 w-2.5" />K
             </kbd>
           </button>
-          <QuoteSelector />
-          <MarketStatus />
+
           <Tooltip
             content={
               <span>
-                <b>Cash available to trade.</b> Money moved into open positions is not counted here — open the
-                portfolio for total value. Accounts are separate:{" "}
+                <b>Cash available to trade.</b> Money moved into open positions is not counted here — the bottom bar
+                shows account balance and equity. Accounts are separate:{" "}
                 <b>{hydrated ? balances.SOL.toFixed(2) : "50.00"} SOL</b> and{" "}
                 <b>{hydrated ? balances.ETH.toFixed(2) : "50.00"} ETH</b>, with no conversion between them.
-                {openOrders > 0 ? ` ${openOrders} pending limit order${openOrders === 1 ? "" : "s"}.` : ""}
+                {openOrders > 0
+                  ? ` ${openOrders} limit order${openOrders === 1 ? "" : "s"} still waiting — cash moves only when one fills.`
+                  : ""}
               </span>
             }
           >
@@ -158,32 +156,43 @@ export function TopNavigation() {
             >
               <Wallet className="h-3 w-3" />
               <span className="text-faint">cash</span>
-              <span className="num">{hydrated ? formatQuote(balances.SOL, "SOL", 4) : "— SOL"}</span>
+              <span className="num text-fg">{hydrated ? formatQuote(balances.SOL, "SOL", 4) : "— SOL"}</span>
               <span className="text-faint">·</span>
-              <span className="num">{hydrated ? formatQuote(balances.ETH, "ETH", 4) : "— ETH"}</span>
+              <span className="num text-fg">{hydrated ? formatQuote(balances.ETH, "ETH", 4) : "— ETH"}</span>
             </Link>
           </Tooltip>
+
+          {hydrated && openOrders > 0 ? (
+            <Tooltip content="These limit orders have not filled yet, so no cash has moved. Open the portfolio to cancel or review them.">
+              <Link
+                href="/portfolio"
+                className="flex h-7 items-center gap-1 rounded-sm border border-warn/40 bg-warn/10 px-2 text-2xs text-warn transition-colors hover:bg-warn/15"
+              >
+                <Clock className="h-3 w-3" />
+                <span className="num">{openOrders}</span>
+                <span className="hidden sm:inline">waiting</span>
+              </Link>
+            </Tooltip>
+          ) : null}
+
           <Tooltip content="Every order is simulated. Deposits and withdrawals are disabled because no wallet can be connected.">
-            <span tabIndex={0} className="inline-flex">
-              <Badge tone="warn" className="hidden sm:inline-flex">
-                PAPER ONLY
-              </Badge>
+            <span tabIndex={0} className="hidden sm:inline-flex">
+              <Badge tone="warn">PAPER</Badge>
             </span>
           </Tooltip>
+
           <SettingsDialog>
             <Button variant="ghost" size="icon" aria-label="Open settings">
               <Settings2 className="h-3.5 w-3.5" />
             </Button>
           </SettingsDialog>
-          <Link
-            href="/portfolio"
-            className="hidden h-7 items-center rounded-sm border border-border bg-panel px-2 text-2xs font-medium text-muted transition-colors hover:text-fg sm:flex"
-          >
-            Portfolio
-          </Link>
         </div>
       </div>
-      <nav aria-label="Primary mobile" className="flex items-center gap-0.5 overflow-x-auto border-t border-border px-2 panel-scroll lg:hidden">
+
+      <nav
+        aria-label="Primary mobile"
+        className="flex items-center gap-0.5 overflow-x-auto border-t border-border px-2 panel-scroll lg:hidden"
+      >
         {NAV_ITEMS.map((item) => {
           const active = isActive(item.href);
           return (
@@ -197,11 +206,40 @@ export function TopNavigation() {
               aria-current={active ? "page" : undefined}
             >
               {item.label}
-              {active ? <span className="absolute inset-x-1.5 bottom-0 h-[1.5px] bg-accent" /> : null}
+              {active ? <span className="absolute inset-x-1.5 bottom-0 h-[2px] bg-fg" /> : null}
             </Link>
           );
         })}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "relative flex h-8 shrink-0 items-center gap-0.5 px-2 text-2xs font-medium",
+                soonActive ? "text-fg" : "text-faint",
+              )}
+            >
+              More <ChevronDown className="h-2.5 w-2.5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-60">
+            <p className="text-2xs font-semibold uppercase tracking-wide text-muted">Not in this build</p>
+            <div className="mt-1.5 space-y-0.5">
+              {COMING_SOON.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="flex flex-col rounded-sm px-1.5 py-1 text-2xs text-muted transition-colors hover:bg-panel-2 hover:text-fg"
+                >
+                  <span className="font-medium">{item.label}</span>
+                  <span className="text-faint">{item.note}</span>
+                </Link>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
       </nav>
+
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
     </header>
   );

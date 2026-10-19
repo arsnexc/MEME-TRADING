@@ -324,10 +324,20 @@ export function PortfolioView() {
                   Fees paid <span className="num text-muted">{formatQuote(account.fees, quote)}</span>
                 </span>
               </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1 rounded-sm border border-border/70 bg-panel-2/40 px-2 py-1 text-2xs">
+                <span className="text-faint">Where the money is:</span>
+                <span className="num text-muted">{formatQuote(account.free, quote, 3)}</span>
+                <span className="text-faint">cash +</span>
+                <span className="num text-muted">{formatQuote(account.value, quote, 3)}</span>
+                <span className="text-faint">positions =</span>
+                <span className="num font-medium text-fg">{formatQuote(equity, quote, 3)}</span>
+                <span className="text-faint">{quote} total</span>
+              </div>
               <p className="mt-1 text-2xs leading-relaxed text-faint">
-                Buying moves cash into a position, so <span className="text-muted">cash drops</span> while{" "}
-                <span className="text-muted">total value stays about the same</span> — only fees and price moves change
-                it. Nothing leaves your account on a buy except the fee.
+                A buy moves cash into a position, so{" "}
+                <span className="text-muted">cash drops</span> while{" "}
+                <span className="text-muted">total value barely moves</span> — only the fee and later price
+                changes alter it. A resting limit order has not moved anything yet.
               </p>
             </section>
           );

@@ -84,7 +84,7 @@ export function BottomPanel({
   );
 
   return (
-    <section className="flex min-h-[280px] flex-col bg-panel/20" aria-label="Token analytics terminal">
+    <section className="flex min-h-[240px] flex-col bg-[#0b0b0b]" aria-label="Token analytics terminal">
       <div
         className="flex items-center gap-0.5 overflow-x-auto border-b border-border px-2 panel-scroll"
         role="tablist"
@@ -113,7 +113,7 @@ export function BottomPanel({
               {item.id === "positions" && positions.length > 0 ? (
                 <span className="h-1 w-1 rounded-full bg-buy" aria-hidden="true" />
               ) : null}
-              {active ? <span className="absolute inset-x-1.5 bottom-0 h-[1.5px] bg-accent" /> : null}
+              {active ? <span className="absolute inset-x-1.5 bottom-0 h-[2px] bg-fg" /> : null}
             </button>
           );
         })}
@@ -125,7 +125,7 @@ export function BottomPanel({
       <div
         id="bottom-tab-panel"
         role="tabpanel"
-        className="min-h-[240px] flex-1 overflow-y-auto panel-scroll"
+        className="min-h-[200px] flex-1 overflow-y-auto panel-scroll"
       >
         {tab === "positions" ? (
           <PositionsTable

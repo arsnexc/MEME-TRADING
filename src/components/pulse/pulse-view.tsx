@@ -35,10 +35,10 @@ export function PulseView() {
 
   const networks = network === "all" ? undefined : [network];
   const fetcher = (signal: AbortSignal) => fetchMarketsClient({ tab: "trending", networks, signal });
-  const trending = usePollingQuery<MarketsResponse>(`pulse:trending:${network}`, fetcher, { intervalMs: 30_000 });
+  const trending = usePollingQuery<MarketsResponse>(`pulse:trending:${network}`, fetcher, { intervalMs: 60_000, persist: true });
 
   const radarFetcher = (signal: AbortSignal) => fetchMarketsClient({ tab: "radar", networks, signal });
-  const radar = usePollingQuery<MarketsResponse>(`pulse:radar:${network}`, radarFetcher, { intervalMs: 40_000 });
+  const radar = usePollingQuery<MarketsResponse>(`pulse:radar:${network}`, radarFetcher, { intervalMs: 60_000, persist: true });
 
   const tokens = useMemo(() => trending.data?.tokens ?? [], [trending.data]);
   const fresh = useMemo(() => radar.data?.tokens ?? [], [radar.data]);

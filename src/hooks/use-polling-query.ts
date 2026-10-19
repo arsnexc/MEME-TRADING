@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Fetched, Transport } from "@/lib/market-data/client";
+import { readSnapshot, writeSnapshot } from "@/lib/snapshot-cache";
 
 /** Upper bound for provider-driven backoff so a tab always recovers eventually. */
 const MAX_RETRY_DELAY_MS = 180_000;
@@ -30,6 +31,12 @@ export interface PollingQueryState<T> {
 export interface PollingQueryOptions {
   intervalMs?: number;
   enabled?: boolean;
+  /**
+   * Keep the last successful payload in `sessionStorage` so a revisit during a
+   * rate-limit window can paint it (labelled as a snapshot) instead of an error.
+   * Off by default: only list pages opt in.
+   */
+  persist?: boolean;
 }
 
 /**
@@ -44,7 +51,7 @@ export function usePollingQuery<T>(
   fetcher: (signal: AbortSignal) => Promise<Fetched<T>>,
   options: PollingQueryOptions = {},
 ) {
-  const { intervalMs = 20_000, enabled = true } = options;
+  const { intervalMs = 20_000, enabled = true, persist = false } = options;
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
@@ -98,6 +105,22 @@ export function usePollingQuery<T>(
       retryAttempt: 0,
     });
 
+    // Paint a saved snapshot instantly. It is marked stale, and a successful
+    // response replaces it on the first cycle.
+    if (persist) {
+      const snapshot = readSnapshot<T>(key);
+      if (snapshot) {
+        hasDataForKey = true;
+        setState((prev) => ({
+          ...prev,
+          data: snapshot.data,
+          loading: false,
+          lastUpdated: snapshot.at,
+          stale: true,
+        }));
+      }
+    }
+
     let failures = 0;
     let delayForNext = intervalMs;
 
@@ -129,6 +152,7 @@ export function usePollingQuery<T>(
         hasDataForKey = true;
         failures = 0;
         delayForNext = intervalMs;
+        if (persist) writeSnapshot(key, result.data, result.receivedAt);
         setState({
           data: result.data,
           loading: false,
@@ -201,7 +225,7 @@ export function usePollingQuery<T>(
       document.removeEventListener("visibilitychange", onVisibility);
       triggerRef.current = null;
     };
-  }, [key, enabled, intervalMs]);
+  }, [key, enabled, intervalMs, persist]);
 
   const refresh = useCallback(() => {
     triggerRef.current?.(true);

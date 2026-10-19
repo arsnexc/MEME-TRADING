@@ -89,8 +89,11 @@ export function DiscoveryView() {
   );
 
   const marketQuery = usePollingQuery(`markets:${dataTab}:${network}`, fetcher, {
-    intervalMs: tab === "radar" ? 25_000 : 30_000,
+    // 45 s keeps a discovery tab at ~4 GeckoTerminal calls/minute, well inside
+    // the shared public budget even with a second tab open.
+    intervalMs: 45_000,
     enabled: fetchEnabled,
+    persist: true,
   });
 
   const tokens = useMemo(() => marketQuery.data?.tokens ?? [], [marketQuery.data]);

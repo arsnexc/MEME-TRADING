@@ -20,7 +20,7 @@ const PROVIDER_LIMITS: Record<string, ProviderLimit> = {
 };
 
 /** How long a request may wait for a free slot before we give up and return a typed 429. */
-const MAX_QUEUE_WAIT_MS = 2_500;
+const MAX_QUEUE_WAIT_MS = 4_000;
 
 /** First cooldown after an upstream 429; doubles on repeated strikes. */
 const BASE_COOLDOWN_MS = 15_000;
@@ -99,6 +99,13 @@ function noteSuccess(provider: string) {
   if (Date.now() >= bucket.cooldownUntil) bucket.strikes = 0;
 }
 
+/** Human-facing provider name for messages shown in the UI. */
+export function providerLabel(provider: string): string {
+  if (provider === "geckoterminal") return "GeckoTerminal";
+  if (provider === "dexscreener") return "DEX Screener";
+  return provider;
+}
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
@@ -123,7 +130,7 @@ async function acquire(provider: string): Promise<void> {
       const retryAfterMs = bucket.cooldownUntil - now;
       throw new UpstreamError(
         "rate_limited",
-        `${provider} asked us to slow down. Retrying in ${Math.ceil(retryAfterMs / 1000)}s.`,
+        `${providerLabel(provider)} asked us to slow down. Retrying automatically in ${Math.ceil(retryAfterMs / 1000)}s — cached data stays on screen.`,
         { provider, status: 429, retryAfterMs },
       );
     }
@@ -138,14 +145,14 @@ async function acquire(provider: string): Promise<void> {
     if (wait > MAX_QUEUE_WAIT_MS) {
       throw new UpstreamError(
         "rate_limited",
-        `Local rate limit reached for ${provider}. Retrying in ${Math.ceil(wait / 1000)}s.`,
+        `We have used our safe share of ${providerLabel(provider)} requests for this minute. Retrying in ${Math.ceil(wait / 1000)}s — cached data stays on screen.`,
         { provider, status: 429, retryAfterMs: wait },
       );
     }
     await sleep(wait);
   }
 
-  throw new UpstreamError("rate_limited", `Local rate limit reached for ${provider}. Try again shortly.`, {
+  throw new UpstreamError("rate_limited", `We have used our safe share of ${providerLabel(provider)} requests. Try again shortly.`, {
     provider,
     status: 429,
     retryAfterMs: MAX_QUEUE_WAIT_MS,
@@ -217,7 +224,7 @@ export async function getJson<T>(
       const wait = retryAfter ?? DEFAULT_RETRY_AFTER_MS;
       throw new UpstreamError(
         "rate_limited",
-        `The market-data provider rate limit was reached. Retrying in ${Math.ceil(wait / 1000)}s.`,
+        `The market-data provider is asking us to slow down. Retrying automatically in ${Math.ceil(wait / 1000)}s.`,
         { provider: opts.provider, status: 429, retryAfterMs: wait },
       );
     }

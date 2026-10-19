@@ -22,16 +22,25 @@ import {
 } from "lightweight-charts";
 import {
   Crosshair,
-  Eraser,
+  Eye,
+  EyeOff,
+  Lock,
+  Magnet,
+  Minus,
   MousePointer2,
-  Pencil,
+  Percent,
   RefreshCw,
   Ruler,
   Settings2,
+  Shapes,
   SlidersHorizontal,
   SquareDashed,
-  Minus,
+  Trash2,
+  TrendingUp,
+  Type,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -49,7 +58,7 @@ import {
 import { TIMEFRAME_SECONDS, mergeLiveTick } from "@/lib/market-data/live-candle";
 import type { Candle, QuotePrices } from "@/lib/market-data/types";
 import type { Trade } from "@/lib/trading/types";
-import { formatCompact, formatNumber, formatPrice, formatUsdCompact, priceDecimalsFor, expandExponential } from "@/lib/formatting";
+import { formatCompact, formatNumber, formatPrice, priceDecimalsFor, expandExponential } from "@/lib/formatting";
 import { cn } from "@/lib/utils";
 
 type Tool = "cursor" | "hline" | "measure";
@@ -171,24 +180,24 @@ export function ChartPanel({
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "#000000" },
-        textColor: "#a3a3a3",
+        textColor: "#9b9b9b",
         fontFamily:
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
         fontSize: 10,
         attributionLogo: true,
       },
       grid: {
-        vertLines: { color: "#171717" },
-        horzLines: { color: "#171717" },
+        vertLines: { color: "#161616" },
+        horzLines: { color: "#161616" },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: { color: "#3a3a3a", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#242424" },
         horzLine: { color: "#3a3a3a", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#242424" },
       },
-      rightPriceScale: { borderColor: "#242424", scaleMargins: { top: 0.08, bottom: 0.24 } },
+      rightPriceScale: { borderColor: "#262626", scaleMargins: { top: 0.08, bottom: 0.22 } },
       timeScale: {
-        borderColor: "#242424",
+        borderColor: "#262626",
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 3,
@@ -202,11 +211,11 @@ export function ChartPanel({
     });
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
+      upColor: "#0ecb81",
+      downColor: "#f23645",
       borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      wickUpColor: "#0ecb81",
+      wickDownColor: "#f23645",
       priceLineVisible: true,
       lastValueVisible: true,
     });
@@ -261,8 +270,8 @@ export function ChartPanel({
     chart.applyOptions({
       crosshair: { mode: crosshairVisible ? CrosshairMode.Normal : CrosshairMode.Hidden },
       grid: {
-        vertLines: { color: showGrid ? "#171717" : "transparent" },
-        horzLines: { color: showGrid ? "#171717" : "transparent" },
+        vertLines: { color: showGrid ? "#161616" : "transparent" },
+        horzLines: { color: showGrid ? "#161616" : "transparent" },
       },
     });
     chart.priceScale("right").applyOptions({ mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal });
@@ -288,7 +297,7 @@ export function ChartPanel({
       candles.map((candle) => ({
         time: candle.time as Time,
         value: candle.volume,
-        color: candle.close >= candle.open ? "rgba(0, 230, 118, 0.22)" : "rgba(255, 23, 68, 0.22)",
+        color: candle.close >= candle.open ? "rgba(14, 203, 129, 0.20)" : "rgba(242, 54, 69, 0.20)",
       })),
     );
 
@@ -342,7 +351,7 @@ export function ChartPanel({
       volume.update({
         time: bar.time as Time,
         value: 0,
-        color: bar.close >= bar.open ? "rgba(34, 197, 94, 0.22)" : "rgba(239, 68, 68, 0.22)",
+        color: bar.close >= bar.open ? "rgba(14, 203, 129, 0.20)" : "rgba(242, 54, 69, 0.20)",
       });
     }
   }, [livePrice, livePriceAt, candles, factor, timeframe]);
@@ -365,7 +374,7 @@ export function ChartPanel({
       .map(({ trade, time }): SeriesMarker<Time> => ({
         time: time as Time,
         position: trade.side === "buy" ? "belowBar" : "aboveBar",
-        color: trade.side === "buy" ? "#22c55e" : "#ef4444",
+        color: trade.side === "buy" ? "#0ecb81" : "#f23645",
         shape: trade.side === "buy" ? "arrowUp" : "arrowDown",
         text: trade.side === "buy" ? "B" : "S",
         size: 1,
@@ -463,121 +472,106 @@ export function ChartPanel({
   const measurePct =
     measure?.end != null && measure.start !== 0 ? ((measure.end - measure.start) / measure.start) * 100 : null;
 
-  const toolbarButtons = (
+  const timeframeStrip = (
+    <Segmented
+      label="Chart timeframe"
+      value={timeframe}
+      onChange={(value) => onTimeframeChange(value as ChartTimeframe)}
+      options={CHART_TIMEFRAMES.map((item) => ({ value: item.value, label: item.label }))}
+      className="border-transparent bg-transparent p-0"
+    />
+  );
+
+  const railButtons = (
     <>
-      <ToolButton label="Pointer (pan & crosshair)" active={tool === "cursor"} onClick={() => setTool("cursor")} icon={MousePointer2} />
-      <ToolButton
+      <RailButton label="Pointer (pan and crosshair)" active={tool === "cursor"} onClick={() => setTool("cursor")} icon={MousePointer2} />
+      <RailButton
         label={crosshairVisible ? "Hide crosshair" : "Show crosshair"}
-        active={false}
         onClick={() => setCrosshairVisible((visible) => !visible)}
-        icon={Crosshair}
+        icon={crosshairVisible ? Crosshair : EyeOff}
       />
-      <div className="my-1 h-px w-5 bg-border" />
-      <ToolButton
+      <RailButton label="Trend line — not in this build" disabled icon={TrendingUp} onClick={() => {}} />
+      <RailButton label="Fibonacci retracement — not in this build" disabled icon={Percent} onClick={() => {}} />
+      <RailButton label="Text tool — not in this build" disabled icon={Type} onClick={() => {}} />
+      <RailButton label="Patterns — not in this build" disabled icon={Shapes} onClick={() => {}} />
+      <div className="my-0.5 h-px w-5 bg-border" />
+      <RailButton
         label={tool === "hline" ? "Click the chart to place a horizontal line" : "Horizontal line"}
         active={tool === "hline"}
         onClick={() => setTool(tool === "hline" ? "cursor" : "hline")}
         icon={Minus}
       />
-      <ToolButton
+      <RailButton
         label={tool === "measure" ? "Click two points to measure" : "Measure move"}
         active={tool === "measure"}
         onClick={() => setTool(tool === "measure" ? "cursor" : "measure")}
         icon={Ruler}
       />
-      <ToolButton label="Drawing tools are not implemented in this build" disabled icon={Pencil} onClick={() => {}} />
-      <ToolButton label="Clear all drawings and measurements" onClick={clearDrawings} icon={Eraser} />
+      <div className="my-0.5 h-px w-5 bg-border" />
+      <RailButton
+        label="Zoom in"
+        onClick={() => {
+          const scale = chartRef.current?.timeScale();
+          if (!scale) return;
+          const options = scale.options();
+          scale.applyOptions({ barSpacing: Math.min((options.barSpacing ?? 6) * 1.35, 60) });
+        }}
+        icon={ZoomIn}
+      />
+      <RailButton
+        label="Zoom out"
+        onClick={() => {
+          const scale = chartRef.current?.timeScale();
+          if (!scale) return;
+          const options = scale.options();
+          scale.applyOptions({ barSpacing: Math.max((options.barSpacing ?? 6) / 1.35, 1) });
+        }}
+        icon={ZoomOut}
+      />
+      <RailButton label="Magnet — not in this build" disabled icon={Magnet} onClick={() => {}} />
+      <RailButton label="Lock drawings — not in this build" disabled icon={Lock} onClick={() => {}} />
+      <RailButton label={crosshairVisible ? "Crosshair visible" : "Crosshair hidden"} onClick={() => setCrosshairVisible((v) => !v)} icon={Eye} />
+      <div className="mt-auto" />
+      <RailButton label="Clear all drawings and measurements" onClick={clearDrawings} icon={Trash2} />
     </>
   );
 
   return (
-    <section className="flex min-h-[320px] flex-col border-b border-border bg-bg" aria-label={`${symbol} price chart`}>
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1.5">
-        <Segmented
-          label="Chart timeframe"
-          value={timeframe}
-          onChange={(value) => onTimeframeChange(value as ChartTimeframe)}
-          options={CHART_TIMEFRAMES.map((item) => ({ value: item.value, label: item.label }))}
-        />
-        <div className="hidden items-center gap-2 border-l border-border pl-2 text-2xs sm:flex">
-          <span className="text-muted">Candles</span>
-          <span className="text-faint">{effectiveCurrency}</span>
-          {legend ? (
-            <span className="num flex flex-wrap items-center gap-1.5 text-2xs text-faint">
-              <span>O <span className="text-muted">{chartPrice(legend.open, effectiveCurrency)}</span></span>
-              <span>H <span className="text-buy">{chartPrice(legend.high, effectiveCurrency)}</span></span>
-              <span>L <span className="text-sell">{chartPrice(legend.low, effectiveCurrency)}</span></span>
-              <span>C <span className="text-fg">{chartPrice(legend.close, effectiveCurrency)}</span></span>
-              <span>V <span className="text-muted">{formatUsdCompact(legend.volume)}</span></span>
-            </span>
-          ) : null}
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          {fetching && !loading ? <Spinner className="text-faint" /> : null}
-          {livePrice != null && !stale && !error ? (
-            <span className="inline-flex items-center gap-1 text-2xs text-faint" title="The forming candle updates on every price tick">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-buy opacity-60" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-buy" />
-              </span>
-              live
-            </span>
-          ) : null}
-          <span className={cn("hidden text-2xs sm:inline", stale ? "text-warn" : "text-faint")}>
-            {error ? "chart error" : stale ? "stale data" : lastUpdated ? "GeckoTerminal OHLCV" : "loading"}
-          </span>
-          <div className="flex items-center gap-0.5 sm:hidden">
-            <ToolButton label="Horizontal line" active={tool === "hline"} onClick={() => setTool(tool === "hline" ? "cursor" : "hline")} icon={Minus} />
-            <ToolButton label="Measure" active={tool === "measure"} onClick={() => setTool(tool === "measure" ? "cursor" : "measure")} icon={Ruler} />
-          </div>
-          <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label="Chart settings"
-                className="rounded-[2px] p-1 text-faint transition-colors hover:bg-panel-2 hover:text-fg"
-              >
-                <Settings2 className="h-3.5 w-3.5" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-60">
-              <p className="text-2xs font-semibold uppercase tracking-wide text-muted">Chart settings</p>
-              <div className="mt-2 space-y-2">
-                <SettingRow label="Grid lines" checked={showGrid} onChange={setShowGrid} />
-                <SettingRow label="Volume histogram" checked={showVolume} onChange={setShowVolume} />
-                <SettingRow label="Logarithmic price scale" checked={logScale} onChange={setLogScale} />
-                <SettingRow label="Crosshair" checked={crosshairVisible} onChange={setCrosshairVisible} />
-              </div>
-              <div className="mt-2 border-t border-border pt-2">
-                <Button size="xs" variant="outline" onClick={() => chartRef.current?.timeScale().fitContent()}>
-                  <RefreshCw className="h-2.5 w-2.5" /> Reset zoom
-                </Button>
-              </div>
-              <p className="mt-2 text-2xs leading-relaxed text-faint">
-                Drawings live in this chart session only. Volume is always shown in USD.
-              </p>
-            </PopoverContent>
-          </Popover>
-        </div>
-      </div>
-
+    <section className="relative flex min-h-[320px] flex-1 flex-col bg-bg" aria-label={`${symbol} price chart`}>
       <div className="flex min-h-0 flex-1">
-        <div className="hidden w-9 shrink-0 flex-col items-center gap-1 border-r border-border bg-panel/40 py-1.5 sm:flex">
-          {toolbarButtons}
+        <div className="hidden w-9 shrink-0 flex-col items-center gap-0.5 border-r border-border bg-[#0b0b0b] py-1 sm:flex">
+          {railButtons}
         </div>
+
         <div className="relative min-h-[260px] flex-1">
           <div ref={containerRef} className="absolute inset-0" data-testid="price-chart" />
 
           {legend ? (
-            <div className="pointer-events-none absolute left-2 top-2 z-10 rounded-[2px] border border-border bg-bg/80 px-1.5 py-0.5 text-2xs text-faint backdrop-blur-sm">
-              <span className="text-muted">{symbol}</span> · {timeframe} · {effectiveCurrency}
-              {stale ? <span className="ml-1 text-warn">stale</span> : null}
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-gradient-to-b from-black/70 to-transparent px-2 py-1 text-[11px]">
+              <span className="font-semibold text-fg">{symbol}</span>
+              <span className="text-faint">· {timeframe.toUpperCase()} · {network.toUpperCase()}</span>
+              <span className="num flex flex-wrap items-baseline gap-1.5 text-faint">
+                <span>O <span className="text-muted">{chartPrice(legend.open, effectiveCurrency)}</span></span>
+                <span>H <span className="text-buy">{chartPrice(legend.high, effectiveCurrency)}</span></span>
+                <span>L <span className="text-sell">{chartPrice(legend.low, effectiveCurrency)}</span></span>
+                <span>C <span className="text-fg">{chartPrice(legend.close, effectiveCurrency)}</span></span>
+              </span>
+              {stale ? <span className="text-warn">stale</span> : null}
             </div>
           ) : null}
 
+          <div className="pointer-events-none absolute inset-0 z-0 flex select-none items-center justify-center">
+            <div className="text-center opacity-[0.05]">
+              <p className="text-3xl font-bold tracking-tight text-fg">{symbol}</p>
+              <p className="text-[10px] uppercase tracking-[0.3em] text-fg">
+                {network} · {timeframe}
+              </p>
+            </div>
+          </div>
+
           {measure && measure.end != null && measurePct != null ? (
-            <div className="absolute right-2 top-2 z-10 flex items-center gap-2 rounded-sm border border-accent/40 bg-[#0a0a0a]/95 px-2 py-1 text-2xs shadow-lg">
-              <SlidersHorizontal className="h-3 w-3 text-accent" />
+            <div className="absolute right-2 top-8 z-10 flex items-center gap-2 rounded-sm border border-border-strong bg-[#0b0b0b]/95 px-2 py-1 text-2xs">
+              <SlidersHorizontal className="h-3 w-3 text-fg" />
               <span className="num text-fg">
                 {measure.end >= measure.start ? "+" : "−"}
                 {Math.abs(measurePct).toFixed(2)}%
@@ -600,7 +594,7 @@ export function ChartPanel({
           ) : null}
 
           {measure && measure.end == null ? (
-            <div className="absolute left-2 top-9 z-10 rounded-sm border border-accent/30 bg-[#0a0a0a]/90 px-1.5 py-0.5 text-2xs text-muted">
+            <div className="absolute left-2 top-8 z-10 rounded-sm border border-border-strong bg-[#0b0b0b]/90 px-1.5 py-0.5 text-2xs text-muted">
               Click a second point to measure
             </div>
           ) : null}
@@ -636,27 +630,58 @@ export function ChartPanel({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-2.5 py-1 text-2xs text-faint">
-        <span>
-          OHLCV: GeckoTerminal · no synthetic candles · history every 20s · last bar on
-          every price tick ·{" "}
-          {lastUpdated ? `refreshed ${new Date(lastUpdated).toLocaleTimeString("en-GB", { hour12: false })}` : "pending"}
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-full bg-buy" /> buy fill
+      <div className="flex h-7 shrink-0 items-center gap-2 border-t border-border bg-[#0b0b0b] px-1.5 text-2xs text-faint">
+        {timeframeStrip}
+        <span className="hidden lg:inline">OHLCV GeckoTerminal · last bar updates on every tick</span>
+        <div className="ml-auto flex items-center gap-2">
+          {fetching && !loading ? <Spinner className="text-faint" /> : null}
+          {livePrice != null && !stale && !error ? (
+            <span className="inline-flex items-center gap-1 text-2xs text-faint" title="The forming candle updates on every price tick">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-buy opacity-60" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-buy" />
+              </span>
+              live
+            </span>
+          ) : null}
+          <span className={cn("num hidden sm:inline", stale ? "text-warn" : "text-faint")}>
+            {lastUpdated ? new Date(lastUpdated).toLocaleTimeString("en-GB", { hour12: false }) : "—"}
           </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-full bg-sell" /> sell fill
-          </span>
-          <span className="hidden sm:inline">· markers are your simulated executions</span>
-        </span>
+          <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="Chart settings"
+                className="rounded-[2px] p-1 text-faint transition-colors hover:bg-panel-2 hover:text-fg"
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-60">
+              <p className="text-2xs font-semibold uppercase tracking-wide text-muted">Chart settings</p>
+              <div className="mt-2 space-y-2">
+                <SettingRow label="Grid lines" checked={showGrid} onChange={setShowGrid} />
+                <SettingRow label="Volume histogram" checked={showVolume} onChange={setShowVolume} />
+                <SettingRow label="Logarithmic price scale" checked={logScale} onChange={setLogScale} />
+                <SettingRow label="Crosshair" checked={crosshairVisible} onChange={setCrosshairVisible} />
+              </div>
+              <div className="mt-2 border-t border-border pt-2">
+                <Button size="xs" variant="outline" onClick={() => chartRef.current?.timeScale().fitContent()}>
+                  <RefreshCw className="h-2.5 w-2.5" /> Reset zoom
+                </Button>
+              </div>
+              <p className="mt-2 text-2xs leading-relaxed text-faint">
+                Drawings live in this chart session only. Volume is always shown in USD.
+              </p>
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
     </section>
   );
 }
 
-function ToolButton({
+function RailButton({
   label,
   icon: Icon,
   active,
@@ -680,8 +705,8 @@ function ToolButton({
           disabled={disabled}
           onClick={onClick}
           className={cn(
-            "flex h-6 w-6 items-center justify-center rounded-[2px] transition-colors",
-            active ? "bg-accent/15 text-[#f5f5f5]" : "text-faint hover:bg-panel-2 hover:text-fg",
+            "flex h-7 w-7 items-center justify-center rounded-[2px] transition-colors",
+            active ? "bg-panel-3 text-fg" : "text-faint hover:bg-panel-2 hover:text-fg",
             disabled && "pointer-events-none opacity-35",
           )}
         >

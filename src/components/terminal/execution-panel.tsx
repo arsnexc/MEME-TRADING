@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, Lock, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Spinner } from "@/components/ui/spinner";
@@ -79,6 +78,7 @@ export function ExecutionPanel({
   const priceFresh = priceAge != null && priceAge < 60_000;
   const displayAge = referenceAt ? formatRelativeTime(referenceAt, now) : "unknown";
 
+  const [panelTab, setPanelTab] = useState<"order" | "depth">("order");
   const [side, setSide] = useState<Side>("buy");
   const [orderType, setOrderType] = useState<OrderType>("market");
   const [amountInput, setAmountInput] = useState("");
@@ -377,475 +377,582 @@ export function ExecutionPanel({
 
   const metricsAvailable = hasTradeWindow;
 
+  const sliderMax =
+    side === "buy"
+      ? Math.max(0, balance / (1 + feeRateBps / 10_000) - (orderType === "advanced" ? priorityFee : 0))
+      : position?.quantity ?? 0;
+  const sliderPct = sliderMax > 0 && amount.value != null ? Math.min(100, (amount.value / sliderMax) * 100) : 0;
+  const depth = buildDepth(trades, referencePrice);
+
+  const priceLabel = referencePrice != null ? formatQuotePrice(referencePrice) : "—";
+  const tradeValue = preview
+    ? preview.kind === "buy"
+      ? preview.plan.notional
+      : preview.plan.gross
+    : null;
+
   return (
-    <aside className="flex min-h-0 flex-col border-border bg-panel/30 xl:border-l" aria-label="Paper order execution">
-      <div className="border-b border-border px-2.5 py-2">
-        <div className="flex items-center justify-between">
-          <p className="text-2xs font-semibold uppercase tracking-wide text-muted">Buy / sell · simulated</p>
-          <Tooltip content="Orders are simulated locally. No wallet is connected and no transaction is signed or broadcast.">
-            <Badge tone="warn" className="gap-1">
-              <Lock className="h-2.5 w-2.5" /> simulated
-            </Badge>
-          </Tooltip>
-        </div>
-        <div className="mt-2 grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            aria-pressed={side === "buy"}
-            onClick={() => {
-              setSide("buy");
-              setAmountInput("");
-              setMessage(null);
-            }}
-            className={cn(
-              "h-8 rounded-sm border text-xs font-semibold transition-colors",
-              side === "buy"
-                ? "border-buy/40 bg-buy/15 text-buy"
-                : "border-border bg-panel-2 text-muted hover:text-fg",
-            )}
-          >
-            Buy
-          </button>
-          <button
-            type="button"
-            aria-pressed={side === "sell"}
-            onClick={() => {
-              setSide("sell");
-              setAmountInput("");
-              setMessage(null);
-            }}
-            className={cn(
-              "h-8 rounded-sm border text-xs font-semibold transition-colors",
-              side === "sell"
-                ? "border-sell/40 bg-sell/15 text-sell"
-                : "border-border bg-panel-2 text-muted hover:text-fg",
-            )}
-          >
-            Sell
-          </button>
-        </div>
-
-        <div className="mt-2 flex flex-wrap items-center gap-1">
-          <Segmented
-            size="xs"
-            label="Order type"
-            value={orderType}
-            onChange={(value) => {
-              setOrderType(value as OrderType);
-              setMessage(null);
-            }}
-            options={[
-              { value: "market", label: "Market" },
-              { value: "limit", label: "Limit" },
-              { value: "advanced", label: "Advanced" },
-            ]}
-          />
-          <span className="ml-auto inline-flex items-center gap-1 text-2xs text-faint">
-            <Wallet className="h-2.5 w-2.5" />
-            {hydrated ? `${formatQuote(balance, quote)} cash` : "restoring…"}
+    <aside className="flex min-h-0 flex-col border-border bg-[#0b0b0b] xl:border-l" aria-label="Paper order execution">
+      <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-2">
+        <span className="flex h-4 w-4 items-center justify-center rounded-[2px] bg-panel-3 text-[8px] font-bold text-fg">
+          {token.symbol.slice(0, 2).toUpperCase()}
+        </span>
+        <span className="truncate text-xs font-semibold text-fg">{token.symbol}</span>
+        <Tooltip content="Orders are simulated locally. No wallet is connected and no transaction is signed or broadcast.">
+          <span className="inline-flex items-center gap-1 text-[10px] text-faint">
+            <Lock className="h-2.5 w-2.5" /> paper
           </span>
-        </div>
-        <p className="mt-1 text-2xs leading-relaxed text-faint">
-          {orderType === "market"
-            ? "Buys or sells now at the live price, adjusted by your slippage setting."
-            : orderType === "limit"
-              ? "Waits until the market reaches your price. Checked only while this site is open."
-              : "Like a market order, but you choose the fee and priority fee to test different costs."}
-        </p>
-      </div>
-
-      <div className="border-b border-border px-2.5 py-1.5">
-        <div className="flex items-center justify-between text-2xs">
-          <span className="text-faint">5m volume</span>
-          <span className="num text-fg">{market.volumeUsd.m5 == null ? "—" : formatMoneyShort(market.volumeUsd.m5)}</span>
-        </div>
-        <div className="mt-1 grid grid-cols-3 gap-1.5">
-          <Stat
-            label="Buy vol"
-            value={metricsAvailable ? formatMoneyShort(windowStats.buy) : "—"}
-            tone="buy"
-            hint={metricsAvailable ? "Derived from fetched trades in the last 5 minutes." : "Trade window unavailable from the provider."}
-          />
-          <Stat
-            label="Sell vol"
-            value={metricsAvailable ? formatMoneyShort(windowStats.sell) : "—"}
-            tone="sell"
-            hint={metricsAvailable ? "Derived from fetched trades in the last 5 minutes." : "Trade window unavailable from the provider."}
-          />
-          <Stat
-            label="Net"
-            value={metricsAvailable ? formatMoneyShort(windowStats.net) : "—"}
-            tone={windowStats.net != null && windowStats.net < 0 ? "sell" : "buy"}
-            hint={metricsAvailable ? "Buy volume − sell volume in the fetched 5-minute trade window." : "Trade window unavailable from the provider."}
-          />
-        </div>
-        <div className="mt-1 flex items-center justify-between text-2xs text-faint">
-          <span>
-            {market.txns.m5 ? `${market.txns.m5.buys} buys · ${market.txns.m5.sells} sells (provider)` : "5m transaction counts unavailable"}
-          </span>
-          <button type="button" onClick={onRefreshPrice} className="inline-flex items-center gap-1 hover:text-fg">
-            <RefreshCw className="h-2.5 w-2.5" /> {priceAge != null ? displayAge : "sync"}
-          </button>
+        </Tooltip>
+        <div className="ml-auto flex items-center gap-0.5" role="group" aria-label="Order panel view">
+          {(["order", "depth"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              aria-pressed={panelTab === tab}
+              onClick={() => setPanelTab(tab)}
+              className={cn(
+                "h-7 px-2 text-[11px] font-medium transition-colors",
+                panelTab === tab ? "border-b-2 border-fg text-fg" : "border-b-2 border-transparent text-faint hover:text-muted",
+              )}
+            >
+              {tab === "depth" ? "Depth" : "Order"}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="space-y-2 px-2.5 py-2">
-        <div>
-          <div className="flex items-center justify-between">
-            <label htmlFor="order-amount" className="text-2xs text-muted">
-              {side === "buy" ? `Amount (${quote})` : `Quantity (${token.symbol})`}
-            </label>
-            <span className="text-2xs text-faint">
-              {side === "buy"
-                ? `notional before ${(feeRateBps / 100).toFixed(2)}% fee`
-                : position
-                  ? `position ${formatTokenAmount(position.quantity, 6)} ${token.symbol}`
-                  : "no position"}
-            </span>
+      {panelTab === "depth" ? (
+        <div className="flex-1 overflow-y-auto panel-scroll">
+          <div className="flex items-center justify-between px-2 py-1 text-[10px] text-faint">
+            <span>Price</span>
+            <span>Simulated value</span>
           </div>
-          <div className="relative mt-1">
-            <Input
-              id="order-amount"
-              value={amountInput}
-              onChange={(event) => {
-                setAmountInput(event.target.value.replace(/[^\d.]/g, ""));
-                setMessage(null);
-              }}
-              inputMode="decimal"
-              placeholder={side === "buy" ? "0.0" : "0.0"}
-              className={cn("h-9 pr-14 text-sm", amount.error && "border-sell/50")}
-              aria-describedby="order-amount-help"
-            />
-            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-2xs text-faint">
-              {side === "buy" ? quote : token.symbol}
-            </span>
-          </div>
-          <div id="order-amount-help" className="mt-1 flex flex-wrap items-center gap-1">
-            {side === "buy"
-              ? QUICK_BUY.map((value) => {
-                  const disabled = value + (value * feeRateBps) / 10_000 > balance;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => setAmountInput(value.toString())}
-                      className="num h-5 rounded-[2px] border border-border bg-panel-2 px-1.5 text-2xs text-muted transition-colors hover:text-fg disabled:opacity-30"
-                    >
-                      {value}
-                    </button>
-                  );
-                })
-              : SELL_FRACTIONS.map((fraction) => (
-                  <button
-                    key={fraction}
-                    type="button"
-                    disabled={!position}
-                    onClick={() => setSellFraction(fraction)}
-                    className="num h-5 rounded-[2px] border border-border bg-panel-2 px-1.5 text-2xs text-muted transition-colors hover:text-fg disabled:opacity-30"
-                  >
-                    {fraction === 1 ? "100%" : `${fraction * 100}%`}
-                  </button>
-                ))}
+          {depth.levels.length === 0 ? (
+            <p className="px-2 py-3 text-2xs leading-relaxed text-faint">
+              No recent public trades were returned for this pool, so a depth ladder cannot be shown. Nothing is
+              synthesised.
+            </p>
+          ) : (
+            <div className="px-1 pb-2">
+              {depth.levels.map((level, index) => {
+                const isSell = level.price >= (referencePrice ?? level.price);
+                const width = depth.total > 0 ? Math.max(3, (level.valueUsd / depth.total) * 100) : 3;
+                return (
+                  <div key={`${level.price}-${index}`} className="relative flex h-5 items-center px-1 text-[11px]">
+                    <span
+                      className={cn("absolute inset-y-0 left-0", isSell ? "bg-sell/15" : "bg-buy/15")}
+                      style={{ width: `${width}%` }}
+                    />
+                    <span className={cn("num relative z-10", isSell ? "text-sell" : "text-buy")}>
+                      {formatQuotePrice(level.price)}
+                    </span>
+                    <span className="num relative z-10 ml-auto text-muted">{formatMoneyShort(level.valueUsd)}</span>
+                  </div>
+                );
+              })}
+              <p className="mt-2 border-t border-border px-1 pt-1.5 text-[10px] leading-relaxed text-faint">
+                Aggregated from the last {depth.window} public trades in {quote} buckets around the live price — this is a
+                trade-flow ladder, not a real order book. No resting liquidity is claimed.
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="grid shrink-0 grid-cols-2 gap-1 border-b border-border p-1.5">
             <button
               type="button"
-              onClick={side === "buy" ? maxBuy : () => position && setAmountInput(formatInputValue(position.quantity, 6))}
-              disabled={side === "sell" && !position}
-              className="h-5 rounded-[2px] border border-accent/30 bg-accent/10 px-1.5 text-2xs text-[#f5f5f5] disabled:opacity-30"
-            >
-              MAX
-            </button>
-            {amount.error ? <span className="text-2xs text-sell">{amount.error}</span> : null}
-          </div>
-        </div>
-
-        {orderType === "limit" ? (
-          <div>
-            <label htmlFor="limit-price" className="text-2xs text-muted">
-              Limit price ({quote} per {token.symbol})
-            </label>
-            <Input
-              id="limit-price"
-              value={limitPriceInput}
-              onChange={(event) => {
-                setLimitPriceInput(event.target.value.replace(/[^\d.]/g, ""));
+              aria-pressed={side === "sell"}
+              aria-label="Sell"
+              title={`Sell at ${priceLabel} ${quote}`}
+              onClick={() => {
+                setSide("sell");
+                setAmountInput("");
                 setMessage(null);
               }}
-              inputMode="decimal"
-              placeholder={referencePrice ? formatQuotePrice(referencePrice) : "0.0"}
-              className="mt-1 h-8 text-xs"
-            />
-            <p className="mt-1 text-2xs text-faint">
-              Triggers when the paper price is {side === "buy" ? "at or below" : "at or above"} the limit. Fills at the
-              limit price; slippage is not applied to limit fills.
-            </p>
+              className={cn(
+                "flex h-11 flex-col items-start justify-center rounded-sm border px-2 text-left transition-colors",
+                side === "sell"
+                  ? "border-sell/60 bg-sell/15"
+                  : "border-border bg-panel-2/60 hover:border-sell/40",
+              )}
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-sell">Sell</span>
+              <span className="num text-xs text-fg">{priceLabel}</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={side === "buy"}
+              aria-label="Buy"
+              title={`Buy at ${priceLabel} ${quote}`}
+              onClick={() => {
+                setSide("buy");
+                setAmountInput("");
+                setMessage(null);
+              }}
+              className={cn(
+                "flex h-11 flex-col items-end justify-center rounded-sm border px-2 text-right transition-colors",
+                side === "buy"
+                  ? "border-info/60 bg-info/15"
+                  : "border-border bg-panel-2/60 hover:border-info/40",
+              )}
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-info">Buy</span>
+              <span className="num text-xs text-fg">{priceLabel}</span>
+            </button>
           </div>
-        ) : null}
 
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-2xs text-muted">Slippage</span>
-          <Segmented
-            size="xs"
-            label="Slippage assumption"
-            value={String(slippageBps)}
-            onChange={(value) => setSlippageBps(Number(value))}
-            options={SLIPPAGE_PRESETS.map((bps) => ({ value: String(bps), label: `${bps / 100}%` }))}
-          />
-        </div>
-
-        {orderType === "advanced" ? (
-          <div className="space-y-2 rounded-sm border border-border bg-panel-2/60 p-2">
-            <div className="flex items-center gap-1 text-2xs text-muted">
-              <Info className="h-2.5 w-2.5" /> Advanced simulation controls
+          <div className="space-y-2 px-2 py-2">
+            <div className="flex items-center gap-1" role="group" aria-label="Order type">
+              {(["market", "limit", "advanced"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  aria-pressed={orderType === type}
+                  onClick={() => {
+                    setOrderType(type);
+                    setMessage(null);
+                  }}
+                  className={cn(
+                    "h-7 px-2 text-[11px] font-medium transition-colors",
+                    orderType === type
+                      ? "border-b-2 border-fg text-fg"
+                      : "border-b-2 border-transparent text-faint hover:text-muted",
+                  )}
+                >
+                  {type === "market" ? "Market" : type === "limit" ? "Limit" : "Advanced"}
+                </button>
+              ))}
+              <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-faint">
+                <Wallet className="h-2.5 w-2.5" />
+                {hydrated ? `${formatQuote(balance, quote, 4)} cash` : "restoring…"}
+              </span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="text-2xs text-faint">
-                Execution fee %
+
+            <p className="text-[10px] leading-relaxed text-faint">
+              {orderType === "market"
+                ? "Fills now at the live price, adjusted by your slippage setting."
+                : orderType === "limit"
+                  ? "Waits until the market reaches your price. Checked only while this site is open."
+                  : "Like a market order, but you choose the fee and priority fee to test different costs."}
+            </p>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <label htmlFor="order-amount" className="text-[11px] text-muted">
+                  {side === "buy" ? `Amount (${quote})` : `Quantity (${token.symbol})`}
+                </label>
+                <span className="text-[10px] text-faint">
+                  {side === "buy"
+                    ? `before ${(feeRateBps / 100).toFixed(2)}% fee`
+                    : position
+                      ? `holding ${formatTokenAmount(position.quantity, 6)}`
+                      : "no position"}
+                </span>
+              </div>
+              <div className="relative mt-1">
                 <Input
-                  value={feePercentInput}
+                  id="order-amount"
+                  value={amountInput}
                   onChange={(event) => {
-                    const next = event.target.value.replace(/[^\d.]/g, "");
-                    setFeePercentInput(next);
-                    const parsed = Number(next);
-                    if (next !== "" && Number.isFinite(parsed) && parsed >= 0 && parsed <= 5) {
-                      setFeeRateBps(Math.round(parsed * 100));
-                    }
+                    setAmountInput(event.target.value.replace(/[^\d.]/g, ""));
+                    setMessage(null);
                   }}
                   inputMode="decimal"
-                  className="mt-0.5 h-6 text-2xs"
-                  aria-label="Simulated execution fee percentage"
+                  placeholder="0.0"
+                  className={cn("h-9 pr-14 text-sm", amount.error && "border-sell/50")}
+                  aria-describedby="order-amount-help"
                 />
-              </label>
-              <label className="text-2xs text-faint">
-                Priority fee ({quote})
-                <Input
-                  value={priorityFeeInput}
-                  onChange={(event) => setPriorityFeeInput(event.target.value.replace(/[^\d.]/g, ""))}
-                  inputMode="decimal"
-                  placeholder="0"
-                  disabled={side === "sell"}
-                  className="mt-0.5 h-6 text-2xs"
-                  aria-label="Simulated priority fee"
-                />
-              </label>
-            </div>
-            <p className="text-2xs leading-relaxed text-faint">
-              Fee range 0–5%. Priority fee is added to the simulated buy debit and recorded as a fee; it is not a real
-              network payment. Sells only model the execution fee.
-            </p>
-          </div>
-        ) : null}
+                <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-2xs text-faint">
+                  {side === "buy" ? quote : token.symbol}
+                </span>
+              </div>
 
-        {protectionAvailable ? (
-          <div className="rounded-sm border border-border bg-panel-2/40">
-            <button
-              type="button"
-              onClick={() => setProtectionOpen((value) => !value)}
-              aria-expanded={protectionOpen}
-              className="flex w-full items-center justify-between px-2 py-1.5 text-2xs"
-            >
-              <span className="inline-flex items-center gap-1 text-muted">
-                <ShieldCheck className="h-3 w-3" /> Protect this trade
-                {hasProtection ? <Badge tone="green">on</Badge> : <span className="text-faint">optional</span>}
-              </span>
-              <span className="text-faint">{protectionOpen ? "hide" : "set auto-exit"}</span>
-            </button>
-            {protectionOpen ? (
-              <div className="space-y-2 border-t border-border px-2 py-2">
-                <p className="text-2xs leading-relaxed text-faint">
-                  Automatically sells the whole position when the price crosses a level. Levels are set from the estimated
-                  fill price and can be changed or removed later in the positions table.
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={Math.round(sliderPct)}
+                  onChange={(event) => {
+                    const pct = Number(event.target.value);
+                    if (sliderMax <= 0) return;
+                    setAmountInput(formatInputValue((sliderMax * pct) / 100, 9));
+                    setMessage(null);
+                  }}
+                  aria-label={side === "buy" ? "Percent of cash to spend" : "Percent of position to sell"}
+                  className="h-1 w-full cursor-pointer appearance-none rounded-full bg-border accent-info"
+                  style={{ accentColor: side === "buy" ? "#2962ff" : "#f23645" }}
+                  disabled={sliderMax <= 0}
+                />
+                <span className="num w-8 shrink-0 text-right text-[10px] text-muted">{Math.round(sliderPct)}%</span>
+              </div>
+
+              <div id="order-amount-help" className="mt-1 flex flex-wrap items-center gap-1">
+                {side === "buy"
+                  ? QUICK_BUY.map((value) => {
+                      const disabled = value + (value * feeRateBps) / 10_000 > balance;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => setAmountInput(value.toString())}
+                          className="num h-5 rounded-[2px] border border-border bg-panel-2 px-1.5 text-2xs text-muted transition-colors hover:text-fg disabled:opacity-30"
+                        >
+                          {value}
+                        </button>
+                      );
+                    })
+                  : SELL_FRACTIONS.map((fraction) => (
+                      <button
+                        key={fraction}
+                        type="button"
+                        disabled={!position}
+                        onClick={() => setSellFraction(fraction)}
+                        className="num h-5 rounded-[2px] border border-border bg-panel-2 px-1.5 text-2xs text-muted transition-colors hover:text-fg disabled:opacity-30"
+                      >
+                        {fraction === 1 ? "100%" : `${fraction * 100}%`}
+                      </button>
+                    ))}
+                <button
+                  type="button"
+                  onClick={side === "buy" ? maxBuy : () => position && setAmountInput(formatInputValue(position.quantity, 6))}
+                  disabled={side === "sell" && !position}
+                  className="h-5 rounded-[2px] border border-border-strong bg-panel-3 px-1.5 text-2xs text-fg disabled:opacity-30"
+                >
+                  MAX
+                </button>
+                {amount.error ? <span className="text-2xs text-sell">{amount.error}</span> : null}
+              </div>
+            </div>
+
+            {orderType === "limit" ? (
+              <div>
+                <label htmlFor="limit-price" className="text-[11px] text-muted">
+                  Limit price ({quote} per {token.symbol})
+                </label>
+                <Input
+                  id="limit-price"
+                  value={limitPriceInput}
+                  onChange={(event) => {
+                    setLimitPriceInput(event.target.value.replace(/[^\d.]/g, ""));
+                    setMessage(null);
+                  }}
+                  inputMode="decimal"
+                  placeholder={referencePrice ? formatQuotePrice(referencePrice) : "0.0"}
+                  className="mt-1 h-8 text-xs"
+                />
+                <p className="mt-1 text-[10px] leading-relaxed text-faint">
+                  Triggers when the paper price is {side === "buy" ? "at or below" : "at or above"} the limit. Fills at
+                  the limit price; slippage is not applied to limit fills.
                 </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="text-2xs text-faint" htmlFor="tp-pct">
-                    Take profit %
-                    <Input
-                      id="tp-pct"
-                      value={takeProfitPctInput}
-                      onChange={(event) => setTakeProfitPctInput(event.target.value.replace(/[^\d.]/g, ""))}
-                      inputMode="decimal"
-                      placeholder="e.g. 50"
-                      className={cn("mt-0.5 h-6 text-2xs", !takeProfitValid && "border-sell/60")}
-                    />
-                  </label>
-                  <label className="text-2xs text-faint" htmlFor="sl-pct">
-                    Stop loss %
-                    <Input
-                      id="sl-pct"
-                      value={stopLossPctInput}
-                      onChange={(event) => setStopLossPctInput(event.target.value.replace(/[^\d.]/g, ""))}
-                      inputMode="decimal"
-                      placeholder="e.g. 20"
-                      className={cn("mt-0.5 h-6 text-2xs", !stopLossValid && "border-sell/60")}
-                    />
-                  </label>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {[25, 50, 100].map((pct) => (
-                    <button
-                      key={`tp-${pct}`}
-                      type="button"
-                      onClick={() => setTakeProfitPctInput(String(pct))}
-                      className="h-5 rounded-[2px] border border-border bg-panel-2 px-1.5 text-2xs text-muted hover:text-fg"
-                    >
-                      TP +{pct}%
-                    </button>
-                  ))}
-                  {[10, 25, 50].map((pct) => (
-                    <button
-                      key={`sl-${pct}`}
-                      type="button"
-                      onClick={() => setStopLossPctInput(String(pct))}
-                      className="h-5 rounded-[2px] border border-border bg-panel-2 px-1.5 text-2xs text-muted hover:text-fg"
-                    >
-                      SL −{pct}%
-                    </button>
-                  ))}
-                </div>
-                {protectionPreview && (protectionPreview.takeProfit || protectionPreview.stopLoss) ? (
-                  <p className="num text-2xs text-faint">
-                    {protectionPreview.takeProfit ? `TP ≈ ${formatQuotePrice(protectionPreview.takeProfit)} ${quote}` : ""}
-                    {protectionPreview.takeProfit && protectionPreview.stopLoss ? " · " : ""}
-                    {protectionPreview.stopLoss ? `SL ≈ ${formatQuotePrice(protectionPreview.stopLoss)} ${quote}` : ""}
-                    <span className="text-faint"> (from the live price, before slippage)</span>
-                  </p>
-                ) : null}
-                {!takeProfitValid ? <p className="text-2xs text-sell">Take profit must be a positive percentage.</p> : null}
-                {!stopLossValid ? <p className="text-2xs text-sell">Stop loss must be between 0 and 100%.</p> : null}
               </div>
             ) : null}
-          </div>
-        ) : null}
 
-        {side === "sell" && position && unrealized ? (
-          <div className="rounded-sm border border-border bg-panel-2/50 p-2 text-2xs">
-            <div className="flex justify-between text-faint">
-              <span>Position</span>
-              <span className="num text-muted">
-                {formatTokenAmount(position.quantity, 6)} {token.symbol}
-              </span>
-            </div>
-            <div className="mt-0.5 flex justify-between text-faint">
-              <span>Avg entry</span>
-              <span className="num text-muted">
-                {formatQuotePrice(position.avgEntryPrice)} {quote}
-              </span>
-            </div>
-            <div className="mt-0.5 flex justify-between text-faint">
-              <span>Unrealized (net)</span>
-              <span className={cn("num", pnlClass(unrealized.netPnl))}>
-                {formatQuote(unrealized.netPnl, quote, 5)} · {formatPercent(unrealized.pct)}
-              </span>
-            </div>
-          </div>
-        ) : null}
+            {orderType === "advanced" ? (
+              <div className="space-y-2 rounded-sm border border-border bg-panel-2/60 p-2">
+                <div className="flex items-center gap-1 text-2xs text-muted">
+                  <Info className="h-2.5 w-2.5" /> Simulation controls
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-2xs text-faint">
+                    Fee %
+                    <Input
+                      value={feePercentInput}
+                      onChange={(event) => {
+                        const next = event.target.value.replace(/[^\d.]/g, "");
+                        setFeePercentInput(next);
+                        const parsed = Number(next);
+                        if (next !== "" && Number.isFinite(parsed) && parsed >= 0 && parsed <= 5) {
+                          setFeeRateBps(Math.round(parsed * 100));
+                        }
+                      }}
+                      inputMode="decimal"
+                      className="mt-0.5 h-6 text-2xs"
+                      aria-label="Simulated execution fee percentage"
+                    />
+                  </label>
+                  <label className="text-2xs text-faint">
+                    Priority ({quote})
+                    <Input
+                      value={priorityFeeInput}
+                      onChange={(event) => setPriorityFeeInput(event.target.value.replace(/[^\d.]/g, ""))}
+                      inputMode="decimal"
+                      placeholder="0"
+                      disabled={side === "sell"}
+                      className="mt-0.5 h-6 text-2xs"
+                      aria-label="Simulated priority fee"
+                    />
+                  </label>
+                </div>
+                <p className="text-[10px] leading-relaxed text-faint">
+                  Fee range 0–5%. The priority fee is added to the simulated buy debit and recorded as a fee; it is not a
+                  real network payment. Sells only model the execution fee.
+                </p>
+              </div>
+            ) : null}
 
-        <div className="rounded-sm border border-border bg-[#0a0a0a] p-2">
-          <div className="flex items-center justify-between">
-            <span className="text-2xs font-medium text-muted">Order preview</span>
-            <span className="text-2xs text-faint">
-              {orderType === "limit" ? "at limit price" : orderType === "advanced" ? "advanced" : "market"}
-            </span>
-          </div>
-          {preview ? (
-            <dl className="mt-1.5 space-y-1 text-2xs">
-              <Row
-                label="Reference"
-                value={`${formatQuotePrice(orderType === "limit" ? (preview.limit ?? 0) : preview.plan.referencePrice)} ${quote}`}
-              />
-              <Row
-                label={orderType === "limit" ? "Fill price" : "Est. fill price"}
-                value={`${formatQuotePrice(preview.plan.fillPrice)} ${quote}`}
-              />
-              <Row
-                label={orderType === "limit" ? "Qty at limit" : "Est. quantity"}
-                value={`${formatTokenAmount(preview.plan.quantity, 4)} ${token.symbol}`}
-              />
-              <Row label="Slippage" value={orderType === "limit" ? "not applied" : `${(slippageBps / 100).toFixed(2)}%`} />
-              <Row label="Fee" value={`${formatQuote(preview.plan.fee, quote, 6)} (${(feeRateBps / 100).toFixed(2)}%)`} />
-              {preview.kind === "buy" ? (
-                <>
-                  {preview.plan.priorityFee > 0 ? (
-                    <Row label="Priority fee" value={formatQuote(preview.plan.priorityFee, quote, 6)} />
-                  ) : null}
+            {orderType !== "limit" ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-muted">Slippage</span>
+                <Segmented
+                  size="xs"
+                  label="Slippage assumption"
+                  value={String(slippageBps)}
+                  onChange={(value) => setSlippageBps(Number(value))}
+                  options={SLIPPAGE_PRESETS.map((bps) => ({ value: String(bps), label: `${bps / 100}%` }))}
+                  className="border-transparent bg-transparent p-0"
+                />
+              </div>
+            ) : null}
+
+            <div className="space-y-0.5 border-y border-border py-1.5 text-[11px]">
+              <div className="flex items-center justify-between">
+                <span className="text-faint">Trade value</span>
+                <span className="num text-muted">
+                  {tradeValue != null ? `${formatQuotePrice(tradeValue)} ${quote}` : "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-faint">Available</span>
+                <span className="num text-muted">
+                  {side === "buy"
+                    ? `${formatQuote(balance, quote, 4)}`
+                    : position
+                      ? `${formatTokenAmount(position.quantity, 4)} ${token.symbol}`
+                      : "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-faint">Price</span>
+                <span className={cn("num inline-flex items-center gap-1", priceFresh ? "text-muted" : "text-warn")}>
+                  <span className={cn("h-1 w-1 rounded-full", priceFresh ? "bg-buy" : "bg-warn")} />
+                  {priceFresh ? `fresh · ${displayAge}` : `stale · ${displayAge}`}
+                </span>
+              </div>
+            </div>
+
+            {protectionAvailable ? (
+              <div className="rounded-sm border border-border bg-panel-2/40">
+                <button
+                  type="button"
+                  onClick={() => setProtectionOpen((value) => !value)}
+                  aria-expanded={protectionOpen}
+                  className="flex w-full items-center justify-between px-2 py-1.5 text-[11px]"
+                >
+                  <span className="inline-flex items-center gap-1 text-muted">
+                    <ShieldCheck className="h-3 w-3" /> Exits
+                    {hasProtection ? <Badge tone="green">on</Badge> : <span className="text-faint">optional</span>}
+                  </span>
+                  <span className="text-faint">{protectionOpen ? "−" : "+"}</span>
+                </button>
+                {protectionOpen ? (
+                  <div className="space-y-2 border-t border-border px-2 py-2">
+                    <p className="text-[10px] leading-relaxed text-faint">
+                      Automatically sells the whole position when the price crosses a level. Levels are set from the
+                      estimated fill and can be changed later from the positions table.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-[10px] text-faint" htmlFor="tp-pct">
+                        Take profit %
+                        <Input
+                          id="tp-pct"
+                          value={takeProfitPctInput}
+                          onChange={(event) => setTakeProfitPctInput(event.target.value.replace(/[^\d.]/g, ""))}
+                          inputMode="decimal"
+                          placeholder="e.g. 50"
+                          className={cn("mt-0.5 h-6 text-2xs", !takeProfitValid && "border-sell/60")}
+                        />
+                      </label>
+                      <label className="text-[10px] text-faint" htmlFor="sl-pct">
+                        Stop loss %
+                        <Input
+                          id="sl-pct"
+                          value={stopLossPctInput}
+                          onChange={(event) => setStopLossPctInput(event.target.value.replace(/[^\d.]/g, ""))}
+                          inputMode="decimal"
+                          placeholder="e.g. 20"
+                          className={cn("mt-0.5 h-6 text-2xs", !stopLossValid && "border-sell/60")}
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {[25, 50, 100].map((pct) => (
+                        <button
+                          key={`tp-${pct}`}
+                          type="button"
+                          onClick={() => setTakeProfitPctInput(String(pct))}
+                          className="h-5 rounded-[2px] border border-buy/30 bg-buy/10 px-1.5 text-2xs text-buy hover:bg-buy/20"
+                        >
+                          TP +{pct}%
+                        </button>
+                      ))}
+                      {[10, 25, 50].map((pct) => (
+                        <button
+                          key={`sl-${pct}`}
+                          type="button"
+                          onClick={() => setStopLossPctInput(String(pct))}
+                          className="h-5 rounded-[2px] border border-sell/30 bg-sell/10 px-1.5 text-2xs text-sell hover:bg-sell/20"
+                        >
+                          SL −{pct}%
+                        </button>
+                      ))}
+                    </div>
+                    {protectionPreview && (protectionPreview.takeProfit || protectionPreview.stopLoss) ? (
+                      <p className="num text-[10px] text-faint">
+                        {protectionPreview.takeProfit ? `TP ≈ ${formatQuotePrice(protectionPreview.takeProfit)} ${quote}` : ""}
+                        {protectionPreview.takeProfit && protectionPreview.stopLoss ? " · " : ""}
+                        {protectionPreview.stopLoss ? `SL ≈ ${formatQuotePrice(protectionPreview.stopLoss)} ${quote}` : ""}
+                        <span> (from the live price, before slippage)</span>
+                      </p>
+                    ) : null}
+                    {!takeProfitValid ? <p className="text-2xs text-sell">Take profit must be a positive percentage.</p> : null}
+                    {!stopLossValid ? <p className="text-2xs text-sell">Stop loss must be between 0 and 100%.</p> : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {side === "sell" && position && unrealized ? (
+              <div className="rounded-sm border border-border bg-panel-2/50 p-2 text-2xs">
+                <div className="flex justify-between text-faint">
+                  <span>Position</span>
+                  <span className="num text-muted">
+                    {formatTokenAmount(position.quantity, 6)} {token.symbol}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex justify-between text-faint">
+                  <span>Avg entry</span>
+                  <span className="num text-muted">
+                    {formatQuotePrice(position.avgEntryPrice)} {quote}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex justify-between text-faint">
+                  <span>Unrealized (net)</span>
+                  <span className={cn("num", pnlClass(unrealized.netPnl))}>
+                    {formatQuote(unrealized.netPnl, quote, 5)} · {formatPercent(unrealized.pct)}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="rounded-sm border border-border bg-panel/60 p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-muted">Order preview</span>
+                <span className="text-[10px] text-faint">
+                  {orderType === "limit" ? "at limit price" : orderType === "advanced" ? "advanced" : "market"}
+                </span>
+              </div>
+              {preview ? (
+                <dl className="mt-1.5 space-y-1 text-2xs">
                   <Row
-                    label={orderType === "limit" ? "Total on fill" : "Total debit"}
-                    value={formatQuote(preview.plan.totalDebit, quote, 6)}
-                    strong
+                    label="Reference"
+                    value={`${formatQuotePrice(orderType === "limit" ? (preview.limit ?? 0) : preview.plan.referencePrice)} ${quote}`}
                   />
                   <Row
-                    label={orderType === "limit" ? "Balance on fill" : "Balance after"}
-                    value={formatQuote(Math.max(0, balance - preview.plan.totalDebit), quote, 6)}
+                    label={orderType === "limit" ? "Fill price" : "Est. fill price"}
+                    value={`${formatQuotePrice(preview.plan.fillPrice)} ${quote}`}
                   />
-                </>
+                  <Row
+                    label={orderType === "limit" ? "Qty at limit" : "Est. quantity"}
+                    value={`${formatTokenAmount(preview.plan.quantity, 4)} ${token.symbol}`}
+                  />
+                  <Row label="Slippage" value={orderType === "limit" ? "not applied" : `${(slippageBps / 100).toFixed(2)}%`} />
+                  <Row label="Fee" value={`${formatQuote(preview.plan.fee, quote, 6)} (${(feeRateBps / 100).toFixed(2)}%)`} />
+                  {preview.kind === "buy" ? (
+                    <>
+                      {preview.plan.priorityFee > 0 ? (
+                        <Row label="Priority fee" value={formatQuote(preview.plan.priorityFee, quote, 6)} />
+                      ) : null}
+                      <Row
+                        label={orderType === "limit" ? "Total on fill" : "Total debit"}
+                        value={formatQuote(preview.plan.totalDebit, quote, 6)}
+                        strong
+                      />
+                      <Row
+                        label={orderType === "limit" ? "Balance on fill" : "Balance after"}
+                        value={formatQuote(Math.max(0, balance - preview.plan.totalDebit), quote, 6)}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Row label="Gross proceeds" value={formatQuote(preview.plan.gross, quote, 6)} />
+                      <Row
+                        label={orderType === "limit" ? "Net on fill" : "Net proceeds"}
+                        value={formatQuote(preview.plan.netProceeds, quote, 6)}
+                        strong
+                      />
+                      <Row label="Realized PnL" value={formatQuote(preview.plan.realizedPnl, quote, 6)} />
+                      <Row
+                        label={orderType === "limit" ? "Balance on fill" : "Balance after"}
+                        value={formatQuote(balance + preview.plan.netProceeds, quote, 6)}
+                      />
+                    </>
+                  )}
+                </dl>
               ) : (
-                <>
-                  <Row label="Gross proceeds" value={formatQuote(preview.plan.gross, quote, 6)} />
-                  <Row
-                    label={orderType === "limit" ? "Net on fill" : "Net proceeds"}
-                    value={formatQuote(preview.plan.netProceeds, quote, 6)}
-                    strong
-                  />
-                  <Row label="Realized PnL" value={formatQuote(preview.plan.realizedPnl, quote, 6)} />
-                  <Row
-                    label={orderType === "limit" ? "Balance on fill" : "Balance after"}
-                    value={formatQuote(balance + preview.plan.netProceeds, quote, 6)}
-                  />
-                </>
+                <p className="mt-1.5 text-2xs leading-relaxed text-faint">
+                  Enter {amountInput.trim() === "" ? "an amount" : "a valid amount"}
+                  {side === "sell" ? " and have an open position" : ""}
+                  {orderType === "limit" ? " and a limit price" : ""} to preview the simulated fill.
+                </p>
               )}
-            </dl>
-          ) : (
-            <p className="mt-1.5 text-2xs leading-relaxed text-faint">
-              Enter {amountInput.trim() === "" ? "an amount" : "a valid amount"}
-              {side === "sell" ? " and have an open position" : ""}
-              {orderType === "limit" ? " and a limit price" : ""} to preview the simulated fill.
-            </p>
-          )}
-          <div className="mt-1.5 flex items-center gap-1 border-t border-border pt-1.5 text-2xs text-faint">
-            <span className={cn("h-1 w-1 rounded-full", priceFresh ? "bg-buy" : "bg-warn")} />
-            Price {priceFresh ? `fresh · ${displayAge}` : `stale · ${displayAge}`} · {formatQuote(balance, quote)} available
-          </div>
-        </div>
-
-        {validation ? (
-          <p className="flex items-start gap-1 rounded-sm border border-warn/20 bg-warn/5 px-2 py-1 text-2xs text-warn" role="status">
-            <AlertTriangle className="mt-0.5 h-2.5 w-2.5 shrink-0" /> {validation}
-          </p>
-        ) : null}
-
-        {message ? (
-          <div
-            role="status"
-            className={cn(
-              "rounded-sm border px-2 py-1.5 text-2xs",
-              message.kind === "success" && "border-buy/30 bg-buy/5 text-buy",
-              message.kind === "error" && "border-sell/30 bg-sell/5 text-sell",
-              message.kind === "info" && "border-accent/30 bg-accent/5 text-[#f5f5f5]",
-            )}
-          >
-            <div className="flex items-center gap-1 font-medium">
-              {message.kind === "success" ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-              {message.text}
+              <div className="mt-1.5 flex items-center gap-1 border-t border-border pt-1.5 text-[10px] text-faint">
+                <RefreshCw className="h-2.5 w-2.5" />
+                <button type="button" onClick={onRefreshPrice} className="hover:text-fg">
+                  refresh price
+                </button>
+                <span className="ml-auto">
+                  {metricsAvailable ? `5m net ${formatMoneyShort(windowStats.net)}` : "trade window unavailable"}
+                </span>
+              </div>
             </div>
-            {message.detail ? <p className="mt-0.5 leading-relaxed text-muted">{message.detail}</p> : null}
-          </div>
-        ) : null}
 
-        <Button
-          variant={side === "buy" ? "buy" : "sell"}
-          size="lg"
-          className="w-full text-xs font-semibold"
-          disabled={Boolean(validation) || submitting || !hydrated || !takeProfitValid || !stopLossValid}
-          onClick={() => void execute()}
-          aria-busy={submitting}
-        >
-          {submitting ? <Spinner /> : null}
-          {buttonLabel}
-        </Button>
-        <p className="text-center text-2xs text-faint">
-          Simulated order · no wallet · no signature · 50 {quote} starting balance
-        </p>
-      </div>
+            {validation ? (
+              <p className="flex items-start gap-1 rounded-sm border border-warn/20 bg-warn/5 px-2 py-1 text-2xs text-warn" role="status">
+                <AlertTriangle className="mt-0.5 h-2.5 w-2.5 shrink-0" /> {validation}
+              </p>
+            ) : null}
+
+            {message ? (
+              <div
+                role="status"
+                className={cn(
+                  "rounded-sm border px-2 py-1.5 text-2xs",
+                  message.kind === "success" && "border-buy/30 bg-buy/5 text-buy",
+                  message.kind === "error" && "border-sell/30 bg-sell/5 text-sell",
+                  message.kind === "info" && "border-border-strong bg-panel-2 text-fg",
+                )}
+              >
+                <div className="flex items-center gap-1 font-medium">
+                  {message.kind === "success" ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                  {message.text}
+                </div>
+                {message.detail ? <p className="mt-0.5 leading-relaxed text-muted">{message.detail}</p> : null}
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              disabled={Boolean(validation) || submitting || !hydrated || !takeProfitValid || !stopLossValid}
+              onClick={() => void execute()}
+              aria-busy={submitting}
+              className={cn(
+                "flex h-10 w-full items-center justify-center gap-2 rounded-sm text-sm font-semibold text-white transition-[filter] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40",
+                side === "buy" ? "bg-info" : "bg-sell",
+              )}
+            >
+              {submitting ? <Spinner className="text-white" /> : null}
+              {buttonLabel}
+            </button>
+            <p className="text-center text-[10px] text-faint">
+              Simulated order · no wallet · no signature · starts at 50 {quote}
+            </p>
+          </div>
+        </>
+      )}
 
       <CalloutComposer token={token} />
     </aside>
@@ -861,27 +968,6 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
   );
 }
 
-function Stat({
-  label,
-  value,
-  tone,
-  hint,
-}: {
-  label: string;
-  value: string;
-  tone: "buy" | "sell";
-  hint: string;
-}) {
-  return (
-    <Tooltip content={hint}>
-      <div className="cursor-help">
-        <p className="text-2xs text-faint">{label}</p>
-        <p className={cn("num text-xs", value === "—" ? "text-faint" : tone === "buy" ? "text-buy" : "text-sell")}>{value}</p>
-      </div>
-    </Tooltip>
-  );
-}
-
 function formatMoneyShort(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "—";
   const abs = Math.abs(value);
@@ -890,4 +976,33 @@ function formatMoneyShort(value: number | null): string {
   if (abs >= 1) return `$${value.toFixed(2)}`;
   if (abs === 0) return "$0";
   return `$${value.toPrecision(3)}`;
+}
+
+interface DepthLevel {
+  price: number;
+  valueUsd: number;
+  count: number;
+}
+
+/** Buckets recent public trades by distance from the live price for the Depth tab. */
+function buildDepth(
+  trades: MarketTrade[],
+  reference: number | null,
+): { levels: DepthLevel[]; total: number; window: number } {
+  if (!reference || !Number.isFinite(reference) || reference <= 0) return { levels: [], total: 0, window: 0 };
+  const list = trades.filter((trade) => Number.isFinite(trade.priceUsd) && trade.priceUsd > 0).slice(0, 150);
+  if (list.length === 0) return { levels: [], total: 0, window: 0 };
+  const step = 0.004;
+  const buckets = new Map<number, DepthLevel>();
+  for (const trade of list) {
+    const offset = Math.round(Math.log(trade.priceUsd / reference) / Math.log(1 + step));
+    if (Math.abs(offset) > 8) continue;
+    const level = buckets.get(offset) ?? { price: reference * (1 + step) ** offset, valueUsd: 0, count: 0 };
+    level.valueUsd += trade.valueUsd;
+    level.count += 1;
+    buckets.set(offset, level);
+  }
+  const levels = [...buckets.entries()].sort((a, b) => b[0] - a[0]).map(([, level]) => level);
+  const total = levels.reduce((sum, level) => sum + level.valueUsd, 0);
+  return { levels, total, window: list.length };
 }
