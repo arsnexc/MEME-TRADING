@@ -18,6 +18,9 @@ import { fetchOhlcvClient, fetchTokenClient, fetchTradesClient } from "@/lib/mar
 import type { MarketToken, QuotePrices, TokenDetailResponse } from "@/lib/market-data/types";
 import type { ChartTimeframe, DisplayCurrency, NetworkId } from "@/lib/constants";
 import type { Position, TokenRef } from "@/lib/trading/types";
+import { computeUnrealized } from "@/lib/trading/engine";
+import type { BracketLevel } from "@/lib/trading/chart-bracket";
+import type { ChartBracketData } from "./chart-bracket";
 import { formatRelativeTime } from "@/lib/formatting";
 import { useLivePrice } from "@/hooks/use-live-price";
 import { useNow } from "@/hooks/use-now";
@@ -219,6 +222,43 @@ export function TerminalView({
     toast({ title: "Paper limit order cancelled", variant: "info" });
   }, []);
 
+  // Declared before the loading/empty early returns so hook order never changes.
+  const openPosition = positions.find((position) =>
+    token
+      ? position.token.network === token.network &&
+        position.token.address.toLowerCase() === token.address.toLowerCase()
+      : position.token.network === network && position.token.address.toLowerCase() === activeAddress.toLowerCase(),
+  );
+  const handleSetLevel = useCallback(
+    (level: BracketLevel, price: number | null) => {
+      const position = usePaperStore
+        .getState()
+        .positions.find((candidate) => candidate.id === openPosition?.id);
+      if (!position) return;
+      const result = usePaperStore.getState().setProtection(position.id, {
+        takeProfitPrice: level === "tp" ? price : (position.takeProfitPrice ?? null),
+        stopLossPrice: level === "sl" ? price : (position.stopLossPrice ?? null),
+      });
+      if (!result.ok) {
+        toast({ title: "Exit level rejected", description: result.error.message, variant: "error" });
+        return;
+      }
+      toast({
+        title:
+          price == null
+            ? `${level === "tp" ? "Take profit" : "Stop loss"} removed`
+            : `${level === "tp" ? "Take profit" : "Stop loss"} set`,
+        description:
+          price == null
+            ? "The position stays open; only the level was cleared."
+            : `${position.token.symbol} · ${price.toPrecision(6)} ${position.quote}`,
+        variant: "info",
+      });
+    },
+    [openPosition?.id],
+  );
+
+
   const refreshAll = useCallback(() => {
     marketQuery.refresh();
     chartQuery.refresh();
@@ -290,16 +330,40 @@ export function TerminalView({
     };
   const marketTrades = tradesQuery.data?.trades ?? [];
   const chartCandles = chartQuery.data?.candles ?? [];
-  const currentPosition =
-    positions.find(
-      (position) =>
-        position.token.network === tokenRef.network &&
-        position.token.address.toLowerCase() === tokenRef.address.toLowerCase(),
-    ) ?? null;
+  // Same object resolved before the early return; keeps one matching rule.
+  const currentPosition = openPosition ?? null;
   const markQuote = currentPosition ? (priceFor(currentPosition).priceUsd ?? null) : null;
   const markPriceQuote =
     currentPosition && markQuote != null && quotePrices[currentPosition.quote]?.usd
       ? markQuote / (quotePrices[currentPosition.quote]?.usd as number)
+      : null;
+
+  // The chart can be displayed in USD or in a quote currency; the bracket has to
+  // draw quote-priced levels in whatever the chart currently shows.
+  const bracketMultiplier = currentPosition
+    ? (() => {
+        const positionUsd = quotePrices[currentPosition.quote]?.usd ?? null;
+        const displayUsd = currency === "USD" ? 1 : (quotePrices[currency]?.usd ?? null);
+        if (positionUsd == null || displayUsd == null) return null;
+        return positionUsd / displayUsd;
+      })()
+    : null;
+
+  const bracket: ChartBracketData | null =
+    currentPosition && markPriceQuote != null
+      ? {
+          entryQuote: currentPosition.avgEntryPrice,
+          takeProfitQuote: currentPosition.takeProfitPrice ?? null,
+          stopLossQuote: currentPosition.stopLossPrice ?? null,
+          quote: currentPosition.quote,
+          symbol: currentPosition.token.symbol,
+          netPnlQuote: computeUnrealized(currentPosition, markPriceQuote, feeRateBps).netPnl,
+          usdPnl:
+            quotePrices[currentPosition.quote]?.usd != null
+              ? computeUnrealized(currentPosition, markPriceQuote, feeRateBps).netPnl *
+                (quotePrices[currentPosition.quote]?.usd as number)
+              : null,
+        }
       : null;
 
   return (
@@ -361,6 +425,10 @@ export function TerminalView({
             stale={Boolean(chartQuery.error && chartCandles.length > 0)}
             livePrice={livePrice}
             livePriceAt={livePriceAt}
+            bracket={bracketMultiplier != null ? bracket : null}
+            bracketMultiplier={bracketMultiplier ?? 1}
+            onSetLevel={handleSetLevel}
+            onClosePosition={() => currentPosition && void handleSell(currentPosition, 1)}
           />
         </div>
 

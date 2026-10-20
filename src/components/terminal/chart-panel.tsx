@@ -46,6 +46,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChartBracket, type ChartBracketData } from "./chart-bracket";
+import type { BracketLevel } from "@/lib/trading/chart-bracket";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -94,6 +96,10 @@ export function ChartPanel({
   stale,
   livePrice,
   livePriceAt,
+  bracket = null,
+  bracketMultiplier = 1,
+  onSetLevel,
+  onClosePosition,
 }: {
   symbol: string;
   network: NetworkId;
@@ -113,6 +119,12 @@ export function ChartPanel({
   /** Latest provider price in USD. Drives the forming candle between polls. */
   livePrice: number | null;
   livePriceAt: number | null;
+  /** Open position bracket for this token, when there is one. */
+  bracket?: ChartBracketData | null;
+  /** Chart value per quote unit for the bracket (1 in quote display, quoteUsd in USD display). */
+  bracketMultiplier?: number;
+  onSetLevel?: (level: BracketLevel, price: number | null) => void;
+  onClosePosition?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -131,6 +143,7 @@ export function ChartPanel({
   const [hover, setHover] = useState<{ open: number; high: number; low: number; close: number; volume: number } | null>(null);
   const [measure, setMeasure] = useState<{ start: number; end: number | null; startTime: Time | null } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chartReady, setChartReady] = useState(false);
 
   const quoteUsd = currency !== "USD" ? quotePrices[currency]?.usd ?? null : 1;
   const effectiveCurrency: DisplayCurrency = currency !== "USD" && !quoteUsd ? "USD" : currency;
@@ -237,6 +250,7 @@ export function ChartPanel({
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
     markersRef.current = createSeriesMarkers(candleSeries, []);
+    setChartReady(true);
 
     const onClick = (param: MouseEventParams<Time>) => clickHandlerRef.current(param);
     const onCrosshair = (param: MouseEventParams<Time>) => crosshairHandlerRef.current(param);
@@ -254,6 +268,7 @@ export function ChartPanel({
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
       markersRef.current = null;
+      setChartReady(false);
     };
     // The chart instance is created once; option changes are applied in separate effects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -549,6 +564,18 @@ export function ChartPanel({
 
         <div className="relative min-h-[260px] flex-1">
           <div ref={containerRef} className="absolute inset-0" data-testid="price-chart" />
+
+          {chartReady && bracket && onSetLevel && onClosePosition ? (
+            <ChartBracket
+              chartRef={chartRef}
+              seriesRef={candleSeriesRef}
+              multiplier={bracketMultiplier}
+              data={bracket}
+              version={livePriceAt ?? 0}
+              onSetLevel={onSetLevel}
+              onClosePosition={onClosePosition}
+            />
+          ) : null}
 
           {legend ? (
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-gradient-to-b from-black/70 to-transparent px-2 py-1 text-[11px]">
