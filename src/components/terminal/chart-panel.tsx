@@ -57,7 +57,7 @@ import {
   type DisplayCurrency,
   type NetworkId,
 } from "@/lib/constants";
-import { TIMEFRAME_SECONDS, mergeLiveTick } from "@/lib/market-data/live-candle";
+import { TIMEFRAME_SECONDS, mergeLiveTick, scaleCandle } from "@/lib/market-data/live-candle";
 import type { Candle, QuotePrices } from "@/lib/market-data/types";
 import type { Trade } from "@/lib/trading/types";
 import { formatCompact, formatNumber, formatPrice, priceDecimalsFor, expandExponential } from "@/lib/formatting";
@@ -75,7 +75,9 @@ function formatChartAxis(value: number, currency: DisplayCurrency): string {
     if (Math.abs(value) >= 1000) return `$${formatCompact(value)}`;
     return `$${formatNumber(value, value >= 1 ? 2 : 6)}`;
   }
-  return `${formatCompact(value)} ${currency}`;
+  // Quote-currency prices are tiny (0.0001 SOL); compact rounding would print
+  // every axis tick as "0.0001". Scale the precision to the value instead.
+  return chartPrice(value, currency);
 }
 
 export function ChartPanel({
@@ -304,13 +306,16 @@ export function ChartPanel({
     const chart = chartRef.current;
     if (!series || !volume || !chart) return;
 
-    const data: CandlestickData<Time>[] = candles.map((candle) => ({
-      time: candle.time as Time,
-      open: candle.open * factor,
-      high: candle.high * factor,
-      low: candle.low * factor,
-      close: candle.close * factor,
-    }));
+    const data: CandlestickData<Time>[] = candles.map((candle) => {
+      const scaled = scaleCandle(candle, factor);
+      return {
+        time: scaled.time as Time,
+        open: scaled.open,
+        high: scaled.high,
+        low: scaled.low,
+        close: scaled.close,
+      };
+    });
     series.setData(data);
     volume.setData(
       candles.map((candle) => ({
@@ -351,8 +356,10 @@ export function ChartPanel({
     const last = candles[candles.length - 1];
     if (!last) return;
 
+    // Both inputs must be in display units: the provider candle is USD, the
+    // live price is USD, and the series is whatever currency the user picked.
     const bar = mergeLiveTick({
-      last,
+      last: scaleCandle(last, factor),
       price: livePrice * factor,
       tickMs: livePriceAt ?? Date.now(),
       intervalSeconds: TIMEFRAME_SECONDS[timeframe],
@@ -478,13 +485,14 @@ export function ChartPanel({
   };
 
   const lastCandle = candles[candles.length - 1];
-  const legend = hover ?? (lastCandle
+  const scaledLast = lastCandle ? scaleCandle(lastCandle, factor) : null;
+  const legend = hover ?? (scaledLast
     ? {
-        open: lastCandle.open * factor,
-        high: lastCandle.high * factor,
-        low: lastCandle.low * factor,
-        close: lastCandle.close * factor,
-        volume: lastCandle.volume,
+        open: scaledLast.open,
+        high: scaledLast.high,
+        low: scaledLast.low,
+        close: scaledLast.close,
+        volume: scaledLast.volume,
       }
     : null);
 

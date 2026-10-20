@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TIMEFRAME_SECONDS, mergeLiveTick } from "@/lib/market-data/live-candle";
+import { TIMEFRAME_SECONDS, mergeLiveTick, scaleCandle } from "@/lib/market-data/live-candle";
 import type { Candle } from "@/lib/market-data/types";
 
 const BAR: Candle = { time: 1_700_000_000, open: 10, high: 12, low: 9, close: 11, volume: 500 };
@@ -65,6 +65,53 @@ describe("live candle merge", () => {
     expect(mergeLiveTick({ ...tick, price: 0 })).toBeNull();
     expect(mergeLiveTick({ ...tick, price: Number.NaN })).toBeNull();
     expect(mergeLiveTick({ ...tick, price: 5, last: null })).toBeNull();
+  });
+
+  it("keeps a quote-currency chart on one scale", () => {
+    // Regression: a SOL-display chart mixed the USD provider candle with the
+    // already-converted live price, drawing one bar 100x taller than the rest.
+    const SOL_USD = 105.74;
+    const factor = 1 / SOL_USD;
+    const raw: Candle = { time: BAR.time, open: 0.0125, high: 0.0127, low: 0.01225, close: 0.01263, volume: 10 };
+    const bar = mergeLiveTick({
+      last: scaleCandle(raw, factor),
+      price: 0.01265 * factor,
+      tickMs: (raw.time + 30) * 1_000,
+      intervalSeconds: 60,
+    });
+    expect(bar).not.toBeNull();
+    // Everything sits around 0.00012 SOL, not 0.0125.
+    expect(bar!.open).toBeCloseTo(0.0125 * factor, 10);
+    expect(bar!.high).toBeCloseTo(0.0127 * factor, 10);
+    expect(bar!.low).toBeCloseTo(0.01225 * factor, 10);
+    expect(bar!.close).toBeCloseTo(0.01265 * factor, 10);
+    expect(bar!.high).toBeLessThan(0.001);
+    // A single tick can never stretch the bar by two orders of magnitude.
+    expect(bar!.high / bar!.low).toBeLessThan(1.1);
+  });
+
+  it("opens the next bar in display units, without a cross-currency jump", () => {
+    const SOL_USD = 105.74;
+    const factor = 1 / SOL_USD;
+    const raw: Candle = { time: BAR.time, open: 0.0125, high: 0.0127, low: 0.01225, close: 0.01263, volume: 10 };
+    const bar = mergeLiveTick({
+      last: scaleCandle(raw, factor),
+      price: 0.0127 * factor,
+      tickMs: (raw.time + 60) * 1_000,
+      intervalSeconds: 60,
+    });
+    expect(bar!.openedNewBar).toBe(true);
+    expect(bar!.open).toBeCloseTo(raw.close * factor, 10);
+    expect(bar!.open).toBeLessThan(0.001);
+    expect(bar!.high).toBeLessThan(0.001);
+  });
+
+  it("leaves candles untouched when the conversion factor is unusable", () => {
+    expect(scaleCandle(BAR, 1)).toEqual(BAR);
+    expect(scaleCandle(BAR, 0)).toEqual(BAR);
+    expect(scaleCandle(BAR, Number.NaN)).toEqual(BAR);
+    const scaled = scaleCandle(BAR, 0.5);
+    expect(scaled).toMatchObject({ open: 5, high: 6, low: 4.5, close: 5.5, volume: 500 });
   });
 
   it("exposes the interval for every chart timeframe", () => {

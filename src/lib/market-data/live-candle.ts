@@ -23,6 +23,24 @@ export interface LiveBar {
 }
 
 /**
+ * Convert a provider candle (USD) into the chart's display currency.
+ *
+ * Every value that reaches the series — history, the forming bar and the legend —
+ * must go through this, otherwise a quote-currency chart mixes two scales and a
+ * single bar can be a hundred times taller than the rest of the series.
+ */
+export function scaleCandle(candle: Candle, factor: number): Candle {
+  if (!Number.isFinite(factor) || factor <= 0) return candle;
+  return {
+    ...candle,
+    open: candle.open * factor,
+    high: candle.high * factor,
+    low: candle.low * factor,
+    close: candle.close * factor,
+  };
+}
+
+/**
  * Fold one provider price into the newest candle.
  *
  * This only ever edits the bar that is still forming (extending its high/low and
@@ -31,7 +49,8 @@ export interface LiveBar {
  * when the provider has not delivered them yet — the caller simply keeps the
  * last known chart state and waits for the next fetch.
  *
- * All prices in and out are in the chart's display currency.
+ * All prices in and out are in the chart's display currency: scale the candle
+ * with `scaleCandle` before passing it in, never a raw USD candle.
  */
 export function mergeLiveTick(options: {
   last: Candle | null | undefined;
