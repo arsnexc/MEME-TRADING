@@ -136,6 +136,8 @@ export function ChartPanel({
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const measureLinesRef = useRef<IPriceLine[]>([]);
   const lastFitRef = useRef<string>("");
+  const lastBarTimeRef = useRef<number>(0);
+  const lastBarCountRef = useRef<number>(0);
 
   const [tool, setTool] = useState<Tool>("cursor");
   const [crosshairVisible, setCrosshairVisible] = useState(true);
@@ -252,6 +254,9 @@ export function ChartPanel({
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
     markersRef.current = createSeriesMarkers(candleSeries, []);
+    appliedSignatureRef.current = "";
+    lastBarTimeRef.current = 0;
+    lastBarCountRef.current = 0;
     setChartReady(true);
 
     const onClick = (param: MouseEventParams<Time>) => clickHandlerRef.current(param);
@@ -300,11 +305,25 @@ export function ChartPanel({
   }, [crosshairVisible, showGrid, logScale, showVolume]);
 
   // Chart data (converted to the selected display currency).
+  //
+  // `setData` rebuilds the series and snaps the time scale back to the newest
+  // bar, so it must only run when the window actually changed. The provider
+  // hands back a fresh array on every poll and React re-renders on every price
+  // tick; without the fingerprints below the chart would jump back to "now"
+  // several times a minute and lose the user's pan, zoom and crosshair.
+  const dataSignature = `${candles.length}|${candles[0]?.time ?? 0}|${candles[candles.length - 1]?.time ?? 0}|${candles[candles.length - 1]?.close ?? 0}|${factor}`;
+  const appliedSignatureRef = useRef("");
+
   useEffect(() => {
     const series = candleSeriesRef.current;
     const volume = volumeSeriesRef.current;
     const chart = chartRef.current;
     if (!series || !volume || !chart) return;
+
+    const fitKey = `${symbol}:${network}:${pool}:${timeframe}:${effectiveCurrency}`;
+    const firstPaintForSeries = fitKey !== lastFitRef.current;
+    if (!firstPaintForSeries && dataSignature === appliedSignatureRef.current) return;
+    appliedSignatureRef.current = dataSignature;
 
     const data: CandlestickData<Time>[] = candles.map((candle) => {
       const scaled = scaleCandle(candle, factor);
@@ -316,6 +335,17 @@ export function ChartPanel({
         close: scaled.close,
       };
     });
+
+    // Remember where the user was looking before the series is rebuilt.
+    const previousRange = chart.timeScale().getVisibleLogicalRange();
+    // Compare against the length that range refers to, not the length that is
+    // about to replace it — a window that grew would otherwise look "panned".
+    const wasFollowingRightEdge = previousRange
+      ? previousRange.to >= lastBarCountRef.current - 1.5
+      : true;
+    const barGrowth = candles.length - lastBarCountRef.current;
+    lastBarCountRef.current = candles.length;
+
     series.setData(data);
     volume.setData(
       candles.map((candle) => ({
@@ -326,6 +356,7 @@ export function ChartPanel({
     );
 
     const last = data[data.length - 1];
+    lastBarTimeRef.current = last ? (last.time as number) : 0;
     if (last) {
       const precision = priceDecimalsFor(last.close);
       series.applyOptions({
@@ -333,12 +364,25 @@ export function ChartPanel({
       });
     }
 
-    const fitKey = `${symbol}:${network}:${pool}:${timeframe}:${effectiveCurrency}`;
-    if (fitKey !== lastFitRef.current && data.length > 0) {
+    if (data.length === 0) return;
+
+    if (firstPaintForSeries) {
       chart.timeScale().fitContent();
       lastFitRef.current = fitKey;
+      return;
     }
-  }, [candles, factor, timeframe, symbol, network, pool, effectiveCurrency]);
+
+    // Keep the user's window unless they were at the live edge, in which case
+    // following the newest bar is what they expect.
+    if (!wasFollowingRightEdge && previousRange) {
+      // Same bars, shifted along by however many were prepended/truncated.
+      const shift = barGrowth < 0 ? barGrowth : 0;
+      chart.timeScale().setVisibleLogicalRange({
+        from: previousRange.from + shift,
+        to: previousRange.to + shift,
+      });
+    }
+  }, [candles, dataSignature, factor, timeframe, symbol, network, pool, effectiveCurrency]);
 
   // Live tick: fold the newest provider price into the forming candle.
   //
@@ -365,20 +409,30 @@ export function ChartPanel({
       intervalSeconds: TIMEFRAME_SECONDS[timeframe],
     });
     if (!bar) return;
+    // A poll can land with older candles than a bar this effect already drew.
+    // Updating backwards throws inside lightweight-charts, and a throw in an
+    // effect tears the terminal down — skip such a tick instead.
+    if ((bar.time as number) < lastBarTimeRef.current) return;
 
-    series.update({
-      time: bar.time as Time,
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-    });
-    if (bar.openedNewBar) {
-      volume.update({
+    try {
+      series.update({
         time: bar.time as Time,
-        value: 0,
-        color: bar.close >= bar.open ? "rgba(14, 203, 129, 0.20)" : "rgba(242, 54, 69, 0.20)",
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
       });
+      lastBarTimeRef.current = bar.time as number;
+      if (bar.openedNewBar) {
+        volume.update({
+          time: bar.time as Time,
+          value: 0,
+          color: bar.close >= bar.open ? "rgba(14, 203, 129, 0.20)" : "rgba(242, 54, 69, 0.20)",
+        });
+      }
+    } catch {
+      // The series rejected the point (for example after a symbol change).
+      // Leave the chart as it is; the next poll repaints it.
     }
   }, [livePrice, livePriceAt, candles, factor, timeframe]);
 
