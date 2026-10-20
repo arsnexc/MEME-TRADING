@@ -55,6 +55,13 @@ function SortHeader({
   );
 }
 
+/**
+ * The ranked screener table.
+ *
+ * Rank is the market-cap position in the loaded universe and does not move
+ * when the table is sorted or filtered — the same contract as a professional
+ * screener. Every other column sorts from its header.
+ */
 export function ScannerTable({
   tokens,
   timeframe,
@@ -64,6 +71,7 @@ export function ScannerTable({
   onOpen,
   watched,
   onToggleWatch,
+  ranks,
 }: {
   tokens: MarketToken[];
   timeframe: ScannerTimeframe;
@@ -73,45 +81,64 @@ export function ScannerTable({
   onOpen: (token: MarketToken) => void;
   watched: Set<string>;
   onToggleWatch: (token: MarketToken) => void;
+  ranks: Map<string, number>;
 }) {
   const ariaSort = (key: SortKey) =>
     sortKey === key ? (sortDirection === "asc" ? ("ascending" as const) : ("descending" as const)) : ("none" as const);
+  const windowLabel = scannerTimeframeLabel(timeframe).toUpperCase();
 
   return (
     <>
       <div className="hidden overflow-x-auto panel-scroll md:block">
-        <table className="w-full min-w-[1080px] table-fixed border-separate border-spacing-0" aria-label="Token scanner">
+        <table className="w-full min-w-[1180px] table-fixed border-separate border-spacing-0" aria-label="Token scanner">
           <colgroup>
+            <col className="w-[54px]" />
             <col />
-            <col className="w-[94px]" />
-            <col className="w-[80px]" />
-            <col className="w-[64px]" />
-            <col className="w-[92px]" />
-            <col className="w-[92px]" />
-            <col className="w-[98px]" />
-            <col className="w-[106px]" />
+            <col className="w-[96px]" />
+            <col className="w-[90px]" />
+            <col className="w-[104px]" />
+            <col className="w-[104px]" />
+            <col className="w-[100px]" />
+            <col className="w-[88px]" />
             <col className="w-[84px]" />
-            <col className="w-[82px]" />
+            <col className="w-[88px]" />
           </colgroup>
           <thead>
             <tr>
-              <th scope="col" className={cn(HEADER_CELL, "pl-3 pr-3 text-left")}>
-                Token / pair
+              <th scope="col" className={cn(HEADER_CELL, "pl-3 pr-1 text-right")} aria-sort={ariaSort("marketCap")}>
+                <SortHeader
+                  label="Rank"
+                  sortKey="marketCap"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={onSort}
+                  align="right"
+                />
+              </th>
+              <th scope="col" className={cn(HEADER_CELL, "pl-2 pr-3 text-left")}>
+                Token
               </th>
               <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("price")}>
                 <SortHeader label="Price" sortKey="price" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
               </th>
               <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("change")}>
-                <SortHeader label="Change %" sortKey="change" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
-              </th>
-              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("age")}>
-                <SortHeader label="Age" sortKey="age" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <SortHeader
+                  label="Change %"
+                  sortKey="change"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={onSort}
+                  suffix={<span className="text-[9px] font-normal tracking-normal text-faint/70">{windowLabel}</span>}
+                />
               </th>
               <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("marketCap")}>
-                <SortHeader label="Mkt cap" sortKey="marketCap" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
-              </th>
-              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("liquidity")}>
-                <SortHeader label="Liquidity" sortKey="liquidity" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <SortHeader
+                  label="Market cap"
+                  sortKey="marketCap"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={onSort}
+                />
               </th>
               <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("volume")}>
                 <SortHeader
@@ -120,27 +147,34 @@ export function ScannerTable({
                   activeKey={sortKey}
                   direction={sortDirection}
                   onSort={onSort}
-                  suffix={<span className="text-[9px] font-normal tracking-normal text-faint/70">{scannerTimeframeLabel(timeframe).toUpperCase()}</span>}
+                  suffix={<span className="text-[9px] font-normal tracking-normal text-faint/70">{windowLabel}</span>}
                 />
               </th>
-              <th scope="col" className={cn(HEADER_CELL, "text-left")} aria-sort={ariaSort("txns")}>
+              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("liquidity")}>
                 <SortHeader
-                  label="Txns"
-                  align="left"
-                  sortKey="txns"
+                  label="Liquidity"
+                  sortKey="liquidity"
                   activeKey={sortKey}
                   direction={sortDirection}
                   onSort={onSort}
-                  suffix={<Info className="h-2.5 w-2.5 text-faint/60" aria-hidden="true" />}
                 />
               </th>
-              <th scope="col" className={cn(HEADER_CELL, "text-left")}>
-                <span className="inline-flex items-center gap-1">
-                  Security
-                  <Tooltip content="Provider-reported LP lock only. Mint/freeze authority and holder concentration are unavailable — shown as unknown, never as safe.">
-                    <Info className="h-2.5 w-2.5 cursor-help text-faint/70" aria-hidden="true" />
-                  </Tooltip>
-                </span>
+              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("traders")}>
+                <SortHeader
+                  label="Traders"
+                  sortKey="traders"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={onSort}
+                  suffix={
+                    <Tooltip content="Wallets that bought or sold in this window, from provider buyer/seller counts. A wallet that did both is counted twice. Holder counts are not published by the pool APIs.">
+                      <Info className="h-2.5 w-2.5 cursor-help text-faint/60" aria-hidden="true" />
+                    </Tooltip>
+                  }
+                />
+              </th>
+              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("age")}>
+                <SortHeader label="Age" sortKey="age" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
               </th>
               <th scope="col" className={cn(HEADER_CELL, "pl-2 pr-3 text-right")}>
                 Action
@@ -152,6 +186,7 @@ export function ScannerTable({
               <TokenRow
                 key={token.id}
                 token={token}
+                rank={ranks.get(token.id) ?? null}
                 timeframe={timeframe}
                 onOpen={onOpen}
                 watched={watched.has(`${token.network}:${token.tokenAddress}`)}
@@ -166,6 +201,7 @@ export function ScannerTable({
           <TokenCard
             key={token.id}
             token={token}
+            rank={ranks.get(token.id) ?? null}
             timeframe={timeframe}
             onOpen={onOpen}
             watched={watched.has(`${token.network}:${token.tokenAddress}`)}

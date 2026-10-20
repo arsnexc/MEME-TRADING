@@ -27,12 +27,14 @@ import { useNow } from "@/hooks/use-now";
 import { usePollingQuery } from "@/hooks/use-polling-query";
 import {
   DISCOVERY_TABS,
+  SCREENER_PAGE_SIZE,
+  SCREENER_UNIVERSE_LIMIT,
   type DiscoveryTab,
   type ScannerTimeframe,
 } from "@/lib/constants";
 import { fetchMarketsClient } from "@/lib/market-data/client";
 import type { MarketToken } from "@/lib/market-data/types";
-import { filterAndSortTokens, paginate, type NetworkFilter } from "@/lib/market-view";
+import { filterAndSortTokens, paginate, rankByMarketCap, topByMarketCap, type NetworkFilter } from "@/lib/market-view";
 import { formatRelativeTime } from "@/lib/formatting";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/stores/hydration";
@@ -42,21 +44,42 @@ import { useWatchlistStore } from "@/stores/watchlist";
 import { useCalloutStore } from "@/stores/callouts";
 import { toast } from "@/stores/toast";
 
-const PAGE_SIZE = 25;
-
 const TAB_HINTS: Partial<Record<DiscoveryTab, string>> = {
-  top: "Trending pools re-ranked by 24h volume. The public API does not expose an all-market ranking.",
-  trending: "Pools GeckoTerminal is tracking as hot on each network right now.",
-  radar: "Brand-new pools, newest first. Extreme risk and usually no price history.",
+  top: "The largest pools by market cap across the scanned networks, capped at 100. The public API exposes no all-market ranking.",
+  radar: "Brand-new pools from the provider's new-pools feed. Sort by Age to see the newest first. Extreme risk and usually no price history.",
   callouts: "Private notes saved in this browser only.",
   streamers: "No verified streamer feed is connected in this build.",
+};
+
+/** Page title per tab — the ranking title must not sit above a list it does not describe. */
+const TAB_HEADINGS: Record<DiscoveryTab, { title: string; blurb: string }> = {
+  top: {
+    title: "Top 100 Meme Coins",
+    blurb: "Ranked by market cap across every live pool this screener scans. Sort any column — rank stays fixed.",
+  },
+  trending: {
+    title: "Top 100 Meme Coins",
+    blurb: "Ranked by market cap across every live pool this screener scans. Sort any column — rank stays fixed.",
+  },
+  radar: {
+    title: "New Meme Pools",
+    blurb: "The newest pools the provider knows about, before any price history exists. Highest risk on the board.",
+  },
+  callouts: {
+    title: "My Notes",
+    blurb: "Private callouts saved in this browser only. Nothing is shared or published.",
+  },
+  streamers: {
+    title: "Streamers",
+    blurb: "No verified streamer feed is connected in this build.",
+  },
 };
 
 export function DiscoveryView() {
   const router = useRouter();
   const now = useNow(15_000);
   const hydrated = useHydrated();
-  const [tab, setTab] = useState<DiscoveryTab>("trending");
+  const [tab, setTab] = useState<DiscoveryTab>("top");
   const [network, setNetwork] = useState<NetworkFilter>("all");
   const [query, setQuery] = useState("");
   const [minLiquidity, setMinLiquidity] = useState(0);
@@ -96,6 +119,14 @@ export function DiscoveryView() {
 
   const tokens = useMemo(() => marketQuery.data?.tokens ?? [], [marketQuery.data]);
   const warnings = marketQuery.data?.warnings ?? [];
+  // A market-cap ranking is only meaningful over the largest pools, and the
+  // title promises at most 100 rows — so the universe is capped and ranked
+  // before filters run. Ranks stay attached to the token, not the row number.
+  const universe = useMemo(
+    () => (tab === "radar" ? tokens : topByMarketCap(tokens, SCREENER_UNIVERSE_LIMIT)),
+    [tab, tokens],
+  );
+  const ranks = useMemo(() => rankByMarketCap(tokens), [tokens]);
 
   useEffect(() => {
     if (!marketQuery.data) return;
@@ -114,7 +145,7 @@ export function DiscoveryView() {
 
   const filtered = useMemo(
     () =>
-      filterAndSortTokens(tokens, {
+      filterAndSortTokens(universe, {
         query,
         timeframe,
         sortKey,
@@ -122,10 +153,10 @@ export function DiscoveryView() {
         minLiquidity,
         network,
       }),
-    [tokens, query, timeframe, sortKey, sortDirection, minLiquidity, network],
+    [universe, query, timeframe, sortKey, sortDirection, minLiquidity, network],
   );
 
-  const paginated = paginate(filtered, page, PAGE_SIZE);
+  const paginated = paginate(filtered, page, SCREENER_PAGE_SIZE);
 
   const openToken = (token: MarketToken) => router.push(terminalHref(token));
 
@@ -155,44 +186,25 @@ export function DiscoveryView() {
   return (
     <div className="flex flex-1 flex-col bg-bg">
       <header className="border-b border-border px-3 pb-3 pt-3.5">
-        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-[20px] font-semibold leading-7 tracking-[-0.02em] text-fg">Discover</h1>
-              <Badge
-                tone="green"
-                className="gap-1 border-buy/25 bg-buy/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-buy"
-              >
-                <span aria-hidden="true" className="h-1 w-1 rounded-full bg-buy" />
-                Paper execution
-              </Badge>
-            </div>
-            <p className="mt-1 max-w-[660px] text-xs leading-5 text-muted">
-              Live on-chain pools across Solana, Ethereum and Base. Orders are simulated in separate SOL and ETH paper
-              accounts — no wallet, no signatures.
+            <h1 className="text-[21px] font-semibold leading-7 tracking-[-0.02em] text-fg">
+              {TAB_HEADINGS[tab].title}
+            </h1>
+            <p className="mt-1 max-w-[760px] text-xs leading-5 text-muted">
+              {TAB_HEADINGS[tab].blurb}
+              {showDataState ? (
+                <span className="text-faint">
+                  {" "}
+                  {marketQuery.loading && universe.length === 0
+                    ? "Loading live pools…"
+                    : `${universe.length} pools loaded · GeckoTerminal + DEX Screener.`}
+                </span>
+              ) : null}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <div className="flex items-center gap-1.5 text-[11px] text-faint">
-              <a
-                href="https://www.geckoterminal.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="transition-colors hover:text-fg"
-              >
-                GeckoTerminal
-              </a>
-              <span aria-hidden="true" className="text-border-strong">·</span>
-              <a
-                href="https://dexscreener.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="transition-colors hover:text-fg"
-              >
-                DEX Screener
-              </a>
-            </div>
+          <div className="flex flex-wrap items-center gap-2 pb-0.5">
             {marketQuery.transport === "direct" ? (
               <Tooltip content={transportNote}>
                 <Badge tone="warn">direct</Badge>
@@ -203,7 +215,7 @@ export function DiscoveryView() {
                 <Badge tone="warn">cached</Badge>
               </Tooltip>
             ) : null}
-            <span aria-hidden="true" className="hidden h-3 w-px bg-border sm:block" />
+
             <Tooltip content={transportNote}>
               <span className="flex items-center gap-1.5 text-[11px] text-faint" tabIndex={0}>
                 <span
@@ -213,6 +225,12 @@ export function DiscoveryView() {
                     marketQuery.error ? "bg-sell" : marketQuery.data?.stale ? "bg-warn" : "bg-buy live-dot",
                   )}
                 />
+                <span className="font-medium text-muted">
+                  {marketQuery.error ? "Reconnecting" : marketQuery.data?.stale ? "Cached" : "Live"}
+                </span>
+                <span aria-hidden="true" className="text-border-strong">
+                  ·
+                </span>
                 <span className="num">
                   {marketQuery.lastUpdated
                     ? `Updated ${formatRelativeTime(marketQuery.lastUpdated, now)}`
@@ -220,6 +238,7 @@ export function DiscoveryView() {
                 </span>
               </span>
             </Tooltip>
+
             <Button
               size="sm"
               variant="outline"
@@ -345,7 +364,7 @@ export function DiscoveryView() {
                 <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-[11px] text-muted">
                   <Spinner /> Loading live pools…
                 </div>
-                <TableSkeleton rows={10} cols={9} />
+                <TableSkeleton rows={12} cols={10} />
               </div>
             ) : marketQuery.error && tokens.length === 0 ? (
               <EmptyState
@@ -400,6 +419,7 @@ export function DiscoveryView() {
               <>
                 <ScannerTable
                   tokens={paginated.items}
+                  ranks={ranks}
                   timeframe={timeframe}
                   sortKey={sortKey}
                   sortDirection={sortDirection}
@@ -409,9 +429,10 @@ export function DiscoveryView() {
                   onToggleWatch={onToggleWatch}
                 />
                 <div className="hidden border-t border-[#1c1c1c] px-3 py-1.5 text-[10px] leading-4 text-faint md:block">
-                  Mcap marked <span className="text-muted">FDV*</span> uses fully-diluted valuation when circulating supply
-                  is unavailable. “Top volume” is the curated trending set re-ranked by 24h volume. Security flags are
-                  provider metadata (LP lock only), not an audit. Simulated orders only.
+                  Rank is the market-cap position in the loaded universe and does not change when you sort. Market cap
+                  marked <span className="text-muted">FDV*</span> uses fully-diluted valuation when circulating supply is
+                  unavailable. “Traders” counts wallet participation, not holders — the pool APIs publish no holder
+                  data. Security flags live on the token page. Simulated orders only.
                 </div>
               </>
             )}

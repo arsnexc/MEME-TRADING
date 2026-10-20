@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink, Star } from "lucide-react";
+import { ExternalLink, Star, Users } from "lucide-react";
 import { NetworkBadge } from "@/components/ui/network-badge";
 import { CopyButton } from "@/components/ui/copy-button";
 import { TokenAvatar } from "@/components/token/token-avatar";
-import { SecurityBadges } from "@/components/token/security-badges";
 import { SocialLinks } from "@/components/token/social-links";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useDisplayCurrency } from "@/hooks/use-display-currency";
-import { aggregateTransactions } from "@/lib/market-view";
+import { aggregateTransactions, traderCount } from "@/lib/market-view";
 import { formatAge, formatPercent, formatTimestamp } from "@/lib/formatting";
 import type { MarketToken } from "@/lib/market-data/types";
 import type { ScannerTimeframe } from "@/lib/constants";
@@ -28,6 +27,35 @@ export function transactionRatio(token: MarketToken, timeframe: ScannerTimeframe
   if (!txns) return null;
   const total = txns.buys + txns.sells;
   return total === 0 ? null : { ...txns, total, buyPct: (txns.buys / total) * 100 };
+}
+
+/** Market-cap position in the loaded universe. Independent of sort and filters. */
+function RankCell({ rank }: { rank: number | null | undefined }) {
+  if (rank == null) return <span className="num text-[11px] text-faint">—</span>;
+  return (
+    <span className="num text-[11px] tabular-nums text-muted" aria-label={`Rank ${rank}`}>
+      {rank}
+    </span>
+  );
+}
+
+/** Wallet participants in the window. Not a holder count — see the header note. */
+function TradersCell({ token, timeframe }: { token: MarketToken; timeframe: ScannerTimeframe }) {
+  const count = traderCount(token, timeframe);
+  if (count == null) {
+    return (
+      <Tooltip content="Buyer and seller wallet counts are unavailable for this pool in the selected window.">
+        <span className="num text-[11px] text-faint">—</span>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip
+      content={`${count.toLocaleString()} wallets traded in the ${scannerTimeframeLabel(timeframe)} window (buyers + sellers). A wallet that did both is counted twice.`}
+    >
+      <span className="num text-[11px] text-fg">{compactCount(count)}</span>
+    </Tooltip>
+  );
 }
 
 export function ChangeValue({ value }: { value: number | null }) {
@@ -159,12 +187,15 @@ function RowAction({ token, onOpen }: { token: MarketToken; onOpen: (token: Mark
 
 export function TokenRow({
   token,
+  rank,
   timeframe,
   onOpen,
   watched,
   onToggleWatch,
 }: {
   token: MarketToken;
+  /** Market-cap rank in the loaded universe; stays fixed while sorting. */
+  rank?: number | null;
   timeframe: ScannerTimeframe;
   onOpen: (token: MarketToken) => void;
   watched: boolean;
@@ -180,7 +211,10 @@ export function TokenRow({
       className="group h-10 cursor-pointer transition-colors hover:bg-[#161616]"
       data-testid={`token-row-${token.symbol}`}
     >
-      <td className={cn(cell, "pl-3 pr-3")}>
+      <td className={cn(cell, "pl-3 pr-1 text-right")}>
+        <RankCell rank={rank} />
+      </td>
+      <td className={cn(cell, "pl-2 pr-3")}>
         <div className="flex min-w-0 items-center gap-1.5">
           <button
             type="button"
@@ -207,12 +241,6 @@ export function TokenRow({
       <td className={cn(numeric, "text-[12px]")}>
         <ChangeValue value={token.changePct[timeframe]} />
       </td>
-      <td
-        className={cn(numeric, "text-[11px] text-muted")}
-        title={token.poolCreatedAt ? `Pool created ${formatTimestamp(token.poolCreatedAt)}` : undefined}
-      >
-        {formatAge(token.poolCreatedAt)}
-      </td>
       <td className={cn(numeric, "text-[12px] text-fg")}>
         <Tooltip
           content={
@@ -233,11 +261,14 @@ export function TokenRow({
           <span className="num">{formatMoney(token.volumeUsd[timeframe], { compact: true })}</span>
         </Tooltip>
       </td>
-      <td className={cn(cell, "px-2")}>
-        <TxnCell token={token} timeframe={timeframe} />
+      <td className={cn(numeric)}>
+        <TradersCell token={token} timeframe={timeframe} />
       </td>
-      <td className={cn(cell, "whitespace-nowrap px-2")}>
-        <SecurityBadges security={token.security} compact />
+      <td
+        className={cn(numeric, "text-[11px] text-muted")}
+        title={token.poolCreatedAt ? `Pool created ${formatTimestamp(token.poolCreatedAt)}` : undefined}
+      >
+        {formatAge(token.poolCreatedAt)}
       </td>
       <td className={cn(cell, "py-2 pl-2 pr-3 text-right")}>
         <RowAction token={token} onOpen={onOpen} />
@@ -248,12 +279,14 @@ export function TokenRow({
 
 export function TokenCard({
   token,
+  rank,
   timeframe,
   onOpen,
   watched,
   onToggleWatch,
 }: {
   token: MarketToken;
+  rank?: number | null;
   timeframe: ScannerTimeframe;
   onOpen: (token: MarketToken) => void;
   watched: boolean;
@@ -263,6 +296,9 @@ export function TokenCard({
   return (
     <article className="border-b border-[#1f1f1f] px-3 py-2.5">
       <div className="flex items-start gap-2">
+        <span className="num mt-1 w-6 shrink-0 text-right text-[11px] tabular-nums text-faint">
+          <RankCell rank={rank} />
+        </span>
         <div className="min-w-0 flex-1">
           <TokenIdentity token={token} href={terminalHref(token)} compact />
         </div>
@@ -304,8 +340,11 @@ export function TokenCard({
         <div className="w-28">
           <TxnCell token={token} timeframe={timeframe} />
         </div>
+        <span className="flex items-center gap-1 text-[10px] text-faint">
+          <Users className="h-3 w-3" aria-hidden="true" />
+          <TradersCell token={token} timeframe={timeframe} /> traders
+        </span>
         {token.dexId ? <span className="truncate text-[10px] text-faint">{token.dexId}</span> : null}
-        <SecurityBadges security={token.security} compact />
       </div>
     </article>
   );

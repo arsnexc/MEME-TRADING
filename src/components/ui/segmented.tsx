@@ -6,6 +6,8 @@ export interface SegmentedOption<T extends string> {
   value: T;
   label: React.ReactNode;
   title?: string;
+  /** Rendered but not selectable — used for windows the data source lacks. */
+  disabled?: boolean;
 }
 
 export function Segmented<T extends string>({
@@ -39,6 +41,8 @@ export function Segmented<T extends string>({
             type="button"
             title={option.title}
             aria-pressed={active}
+            aria-disabled={option.disabled || undefined}
+            disabled={option.disabled}
             onClick={() => onChange(option.value)}
             className={cn(
               "rounded-[2px] font-medium transition-colors",
@@ -48,6 +52,7 @@ export function Segmented<T extends string>({
                   ? "bg-panel-3 text-fg"
                   : "bg-panel-3 text-fg"
                 : "text-muted hover:text-fg",
+              option.disabled && "cursor-not-allowed text-faint/50 hover:text-faint/50",
             )}
           >
             {option.label}

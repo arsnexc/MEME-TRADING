@@ -5,7 +5,15 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { DisplayCurrency, NetworkId, ScannerTimeframe } from "@/lib/constants";
 import { createSafeStorage } from "@/lib/trading/sanitize";
 
-export type SortKey = "marketCap" | "liquidity" | "volume" | "change" | "price" | "age" | "txns";
+export type SortKey =
+  | "marketCap"
+  | "liquidity"
+  | "volume"
+  | "change"
+  | "price"
+  | "age"
+  | "txns"
+  | "traders";
 export type SortDirection = "asc" | "desc";
 
 interface PreferencesState {
@@ -23,7 +31,8 @@ interface PreferencesState {
 const DEFAULTS = {
   displayCurrency: "USD" as DisplayCurrency,
   scannerTimeframe: "h24" as ScannerTimeframe,
-  sortKey: "volume" as SortKey,
+  // The screener opens as a market-cap ranking.
+  sortKey: "marketCap" as SortKey,
   sortDirection: "desc" as SortDirection,
   networkFilter: null as NetworkId[] | null,
 };
@@ -64,7 +73,9 @@ export const usePreferencesStore = create<PreferencesState>()(
           scannerTimeframe: ["m5", "m15", "m30", "h1", "h6", "h24"].includes(saved.scannerTimeframe as string)
             ? (saved.scannerTimeframe as ScannerTimeframe)
             : current.scannerTimeframe,
-          sortKey: ["marketCap", "liquidity", "volume", "change", "price", "age", "txns"].includes(saved.sortKey as string)
+          sortKey: ["marketCap", "liquidity", "volume", "change", "price", "age", "txns", "traders"].includes(
+            saved.sortKey as string,
+          )
             ? (saved.sortKey as SortKey)
             : current.sortKey,
           sortDirection: saved.sortDirection === "asc" ? "asc" : "desc",

@@ -106,13 +106,22 @@ export type DisplayCurrency = "USD" | QuoteCurrency;
 export const DISPLAY_CURRENCIES: DisplayCurrency[] = ["USD", "SOL", "ETH"];
 
 export type DiscoveryTab = "top" | "trending" | "radar" | "callouts" | "streamers";
+/**
+ * Screener tabs. "trending" remains a supported data tab for the service and
+ * older links but is no longer rendered: it fetched the same pool universe as
+ * "top", so two tabs showed identical rows.
+ */
 export const DISCOVERY_TABS: { value: DiscoveryTab; label: string; badge?: string }[] = [
-  { value: "top", label: "Top volume" },
-  { value: "trending", label: "Trending" },
+  { value: "top", label: "Top 100" },
   { value: "radar", label: "New pools", badge: "NEW" },
   { value: "callouts", label: "My notes" },
   { value: "streamers", label: "Streamers" },
 ];
+
+/** Hard cap on the ranked screener universe. */
+export const SCREENER_UNIVERSE_LIMIT = 100;
+/** Rows per page: dense enough to read as a screener, small enough to render fast. */
+export const SCREENER_PAGE_SIZE = 50;
 
 export const APP_NAME = "MEMESCOPE";
 export const PAPER_TRADING_DISCLOSURE =
