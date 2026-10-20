@@ -158,7 +158,7 @@ export function DiscoveryView() {
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.015em] text-fg">Discover</h1>
+              <h1 className="text-[20px] font-semibold leading-7 tracking-[-0.02em] text-fg">Discover</h1>
               <Badge
                 tone="green"
                 className="gap-1 border-buy/25 bg-buy/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-buy"
@@ -206,7 +206,13 @@ export function DiscoveryView() {
             <span aria-hidden="true" className="hidden h-3 w-px bg-border sm:block" />
             <Tooltip content={transportNote}>
               <span className="flex items-center gap-1.5 text-[11px] text-faint" tabIndex={0}>
-                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-buy live-dot" />
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    marketQuery.error ? "bg-sell" : marketQuery.data?.stale ? "bg-warn" : "bg-buy live-dot",
+                  )}
+                />
                 <span className="num">
                   {marketQuery.lastUpdated
                     ? `Updated ${formatRelativeTime(marketQuery.lastUpdated, now)}`

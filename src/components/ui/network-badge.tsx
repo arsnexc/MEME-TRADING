@@ -1,11 +1,8 @@
 import { NETWORKS, type NetworkId } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-const TONE: Record<NetworkId, string> = {
-  solana: "border-border-strong bg-panel-3 text-fg",
-  eth: "border-border bg-panel-2 text-muted",
-  base: "border-border bg-panel-2 text-faint",
-};
+/** One quiet treatment for every chain: the label carries the meaning. */
+const TONE = "border-border bg-panel-2 text-muted";
 
 export function NetworkBadge({ network, className }: { network: NetworkId; className?: string }) {
   const config = NETWORKS[network];
@@ -13,7 +10,7 @@ export function NetworkBadge({ network, className }: { network: NetworkId; class
     <span
       className={cn(
         "inline-flex items-center gap-1 whitespace-nowrap rounded-[2px] border px-1 py-0.5 text-2xs font-medium leading-none",
-        TONE[network],
+        TONE,
         className,
       )}
     >
