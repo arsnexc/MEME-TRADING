@@ -126,13 +126,53 @@ describe("chart bracket overlay", () => {
     expect(onSetLevel).toHaveBeenCalledWith("sl", ENTRY * 0.8);
   });
 
-  it("writes a dragged level back in quote currency", () => {
+  it("stages a dragged level and writes it only on Confirm", () => {
     const { onSetLevel } = renderBracket();
     const handle = screen.getByRole("button", { name: "Drag take profit" });
     fireEvent.pointerDown(handle, { clientY: 0, pointerId: 1 });
     fireEvent.pointerMove(handle, { clientY: 50, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientY: 50, pointerId: 1 });
-    // y = 50 maps to 0.00015 in the fake chart.
+
+    // y = 50 maps to 0.00015 in the fake chart. Nothing is written yet.
+    expect(onSetLevel).not.toHaveBeenCalled();
+    expect(screen.getByText(/TP 0.00015 · unconfirmed/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm take profit change" }));
+    expect(onSetLevel).toHaveBeenCalledWith("tp", 0.00015);
+    expect(onSetLevel).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/unconfirmed/)).not.toBeInTheDocument();
+  });
+
+  it("discards a staged level without touching the account", () => {
+    const { onSetLevel } = renderBracket();
+    const handle = screen.getByRole("button", { name: "Drag stop loss" });
+    fireEvent.pointerDown(handle, { clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientY: 140, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 140, pointerId: 1 });
+    expect(screen.getByText(/SL 0.00006 · unconfirmed/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard stop loss change" }));
+    expect(onSetLevel).not.toHaveBeenCalled();
+    expect(screen.queryByText(/unconfirmed/)).not.toBeInTheDocument();
+    // The stored level is still on the chart.
+    expect(screen.getByText("SL 0.00008")).toBeInTheDocument();
+  });
+
+  it("confirms with Enter and discards with Escape", () => {
+    const { onSetLevel } = renderBracket();
+    const handle = screen.getByRole("button", { name: "Drag take profit" });
+    fireEvent.pointerDown(handle, { clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientY: 50, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 50, pointerId: 1 });
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByText(/unconfirmed/)).not.toBeInTheDocument();
+    expect(onSetLevel).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(handle, { clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientY: 50, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 50, pointerId: 1 });
+    fireEvent.keyDown(window, { key: "Enter" });
     expect(onSetLevel).toHaveBeenCalledWith("tp", 0.00015);
   });
 
@@ -143,6 +183,8 @@ describe("chart bracket overlay", () => {
     fireEvent.pointerMove(handle, { clientY: 150, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientY: 150, pointerId: 1 });
     expect(onSetLevel).not.toHaveBeenCalled();
+    expect(screen.getByText(/Take profit must stay above entry/)).toBeInTheDocument();
+    expect(screen.queryByText(/unconfirmed/)).not.toBeInTheDocument();
   });
 
   it("needs two clicks on the close button before closing the position", () => {

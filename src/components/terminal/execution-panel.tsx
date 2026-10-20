@@ -401,9 +401,24 @@ export function ExecutionPanel({
       ? Math.max(0, balance / (1 + feeRateBps / 10_000) - (orderType === "advanced" ? priorityFee : 0))
       : position?.quantity ?? 0;
   const sliderPct = sliderMax > 0 && amount.value != null ? Math.min(100, (amount.value / sliderMax) * 100) : 0;
-  const depth = buildDepth(trades, referencePrice);
+  const depth = buildDepth(trades, referencePrice, quoteUsd);
 
-  const priceLabel = referencePrice != null ? formatQuotePrice(referencePrice) : "—";
+  // Each side fills at a different price: buys pay up by the slippage
+  // assumption, sells give it up. Showing the same mid on both buttons hid
+  // that spread, so the tags carry the price the engine will actually use
+  // (and the limit price once a valid one is typed).
+  const limitFillPrice = orderType === "limit" && limitPrice.value != null ? limitPrice.value : null;
+  const slippageRate = orderType === "limit" ? 0 : slippageBps / 10_000;
+  const buyTagPrice =
+    limitFillPrice ?? (referencePrice != null ? referencePrice * (1 + slippageRate) : null);
+  const sellTagPrice =
+    limitFillPrice ?? (referencePrice != null ? referencePrice * (1 - slippageRate) : null);
+  const buyTagLabel = buyTagPrice != null ? formatQuotePrice(buyTagPrice) : "—";
+  const sellTagLabel = sellTagPrice != null ? formatQuotePrice(sellTagPrice) : "—";
+  const isLimit = orderType === "limit";
+  const tagHint = isLimit
+    ? "at the limit price · slippage not applied"
+    : `last ${formatQuotePrice(referencePrice ?? 0)} ${slippageRate > 0 ? `· ${(slippageBps / 100).toFixed(2)}% slippage` : "· no slippage"}`;
   const tradeValue = preview
     ? preview.kind === "buy"
       ? preview.plan.notional
@@ -433,12 +448,17 @@ export function ExecutionPanel({
               type="button"
               aria-pressed={panelTab === tab}
               onClick={() => setPanelTab(tab)}
+              title={
+                tab === "depth"
+                  ? "Depth of market. Spot pools publish no order book, so this is a ladder built from the latest public trades."
+                  : "Order ticket"
+              }
               className={cn(
                 "h-7 px-2 text-[11px] font-medium transition-colors",
                 panelTab === tab ? "border-b-2 border-fg text-fg" : "border-b-2 border-transparent text-faint hover:text-muted",
               )}
             >
-              {tab === "depth" ? "Depth" : "Order"}
+              {tab === "depth" ? "DOM" : "Order"}
             </button>
           ))}
         </div>
@@ -447,35 +467,47 @@ export function ExecutionPanel({
       {panelTab === "depth" ? (
         <div className="flex-1 overflow-y-auto panel-scroll">
           <div className="flex items-center justify-between px-2 py-1 text-[10px] text-faint">
-            <span>Price</span>
-            <span>Simulated value</span>
+            <span>Price · {quote}</span>
+            <span className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-[1px] bg-buy/60" /> bought
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-[1px] bg-sell/60" /> sold
+              </span>
+            </span>
           </div>
           {depth.levels.length === 0 ? (
             <p className="px-2 py-3 text-2xs leading-relaxed text-faint">
-              No recent public trades were returned for this pool, so a depth ladder cannot be shown. Nothing is
-              synthesised.
+              {depth.window === 0
+                ? "A DOM ladder needs a live price and recent public trades, and this pool returned one of them empty. Nothing is synthesised."
+                : `The last ${depth.window} public trades all sit outside the ±3% band around the live price, so there is nothing to stack. Nothing is synthesised.`}
             </p>
           ) : (
             <div className="px-1 pb-2">
               {depth.levels.map((level, index) => {
-                const isSell = level.price >= (referencePrice ?? level.price);
                 const width = depth.total > 0 ? Math.max(3, (level.valueUsd / depth.total) * 100) : 3;
+                const buyShare = level.valueUsd > 0 ? (level.buyUsd / level.valueUsd) * 100 : 50;
                 return (
-                  <div key={`${level.price}-${index}`} className="relative flex h-5 items-center px-1 text-[11px]">
-                    <span
-                      className={cn("absolute inset-y-0 left-0", isSell ? "bg-sell/15" : "bg-buy/15")}
-                      style={{ width: `${width}%` }}
-                    />
-                    <span className={cn("num relative z-10", isSell ? "text-sell" : "text-buy")}>
-                      {formatQuotePrice(level.price)}
+                  <div
+                    key={`${level.price}-${index}`}
+                    className="relative flex h-5 items-center px-1 text-[11px]"
+                    title={`${formatMoneyShort(level.buyUsd)} bought · ${formatMoneyShort(level.sellUsd)} sold · ${level.count} trades`}
+                  >
+                    {/* One bar per price bucket, split by the side that traded there. */}
+                    <span className="absolute inset-y-0 left-0 flex" style={{ width: `${width}%` }}>
+                      <span className="h-full bg-buy/20" style={{ width: `${buyShare}%` }} />
+                      <span className="h-full bg-sell/20" style={{ width: `${100 - buyShare}%` }} />
                     </span>
+                    <span className="num relative z-10 text-fg">{formatQuotePrice(level.price)}</span>
                     <span className="num relative z-10 ml-auto text-muted">{formatMoneyShort(level.valueUsd)}</span>
                   </div>
                 );
               })}
               <p className="mt-2 border-t border-border px-1 pt-1.5 text-[10px] leading-relaxed text-faint">
-                Aggregated from the last {depth.window} public trades in {quote} buckets around the live price — this is a
-                trade-flow ladder, not a real order book. No resting liquidity is claimed.
+                Aggregated from the last {depth.window} public trades, bucketed by price around the live price. Green
+                is volume that changed hands on a buy, red on a sell — this is a trade-flow ladder, not a real order
+                book. No resting liquidity is claimed.
               </p>
             </div>
           )}
@@ -487,7 +519,7 @@ export function ExecutionPanel({
               type="button"
               aria-pressed={side === "sell"}
               aria-label="Sell"
-              title={`Sell at ${priceLabel} ${quote}`}
+              title={`Sell at ${sellTagLabel} ${quote} ${tagHint}`}
               onClick={() => {
                 setSide("sell");
                 setAmountInput("");
@@ -501,13 +533,16 @@ export function ExecutionPanel({
               )}
             >
               <span className="text-[10px] font-semibold uppercase tracking-wide text-sell">Sell</span>
-              <span className="num text-xs text-fg">{priceLabel}</span>
+              <span className="num flex items-baseline gap-1 text-xs text-fg">
+                {sellTagLabel}
+                <span className="text-[9px] font-normal text-faint">{isLimit ? "limit" : "est."}</span>
+              </span>
             </button>
             <button
               type="button"
               aria-pressed={side === "buy"}
               aria-label="Buy"
-              title={`Buy at ${priceLabel} ${quote}`}
+              title={`Buy at ${buyTagLabel} ${quote} ${tagHint}`}
               onClick={() => {
                 setSide("buy");
                 setAmountInput("");
@@ -521,7 +556,10 @@ export function ExecutionPanel({
               )}
             >
               <span className="text-[10px] font-semibold uppercase tracking-wide text-info">Buy</span>
-              <span className="num text-xs text-fg">{priceLabel}</span>
+              <span className="num flex items-baseline gap-1 text-xs text-fg">
+                {buyTagLabel}
+                <span className="text-[9px] font-normal text-faint">{isLimit ? "limit" : "est."}</span>
+              </span>
             </button>
           </div>
 
@@ -1004,24 +1042,46 @@ function formatMoneyShort(value: number | null): string {
 interface DepthLevel {
   price: number;
   valueUsd: number;
+  /** Portion of `valueUsd` that came from buys; the rest came from sells. */
+  buyUsd: number;
+  sellUsd: number;
   count: number;
 }
 
-/** Buckets recent public trades by distance from the live price for the Depth tab. */
+/**
+ * Buckets recent public trades by distance from the live price for the DOM tab.
+ *
+ * Trades arrive priced in USD while the reference price is in the account's
+ * quote currency, so both are converted to quote before bucketing — comparing
+ * them directly put every level thousands of buckets away and emptied the
+ * ladder on every SOL- or ETH-quoted pool.
+ */
 function buildDepth(
   trades: MarketTrade[],
   reference: number | null,
+  quoteUsd: number | null,
 ): { levels: DepthLevel[]; total: number; window: number } {
   if (!reference || !Number.isFinite(reference) || reference <= 0) return { levels: [], total: 0, window: 0 };
+  if (!quoteUsd || !Number.isFinite(quoteUsd) || quoteUsd <= 0) return { levels: [], total: 0, window: 0 };
   const list = trades.filter((trade) => Number.isFinite(trade.priceUsd) && trade.priceUsd > 0).slice(0, 150);
   if (list.length === 0) return { levels: [], total: 0, window: 0 };
   const step = 0.004;
   const buckets = new Map<number, DepthLevel>();
   for (const trade of list) {
-    const offset = Math.round(Math.log(trade.priceUsd / reference) / Math.log(1 + step));
+    const priceQuote = trade.priceUsd / quoteUsd;
+    const offset = Math.round(Math.log(priceQuote / reference) / Math.log(1 + step));
     if (Math.abs(offset) > 8) continue;
-    const level = buckets.get(offset) ?? { price: reference * (1 + step) ** offset, valueUsd: 0, count: 0 };
+    const level =
+      buckets.get(offset) ?? {
+        price: reference * (1 + step) ** offset,
+        valueUsd: 0,
+        buyUsd: 0,
+        sellUsd: 0,
+        count: 0,
+      };
     level.valueUsd += trade.valueUsd;
+    if (trade.side === "buy") level.buyUsd += trade.valueUsd;
+    else level.sellUsd += trade.valueUsd;
     level.count += 1;
     buckets.set(offset, level);
   }

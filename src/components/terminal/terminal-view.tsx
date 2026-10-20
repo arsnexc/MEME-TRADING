@@ -421,6 +421,7 @@ export function TerminalView({
             quotePrices={quotePrices}
             currency={currency}
             paperTrades={paperTrades}
+            marketTrades={marketTrades}
             lastUpdated={chartQuery.lastUpdated}
             stale={Boolean(chartQuery.error && chartCandles.length > 0)}
             livePrice={livePrice}

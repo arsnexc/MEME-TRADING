@@ -122,14 +122,14 @@ describe("execution panel", () => {
     expect(usePaperStore.getState().positions).toHaveLength(0);
   });
 
-  it("switches between the order ticket and the depth ladder", () => {
+  it("switches between the order ticket and the DOM ladder", () => {
     renderPanel({
       trades: [
         {
           id: "t1",
           side: "buy",
           // buildDepth buckets in quote currency: 0.01 USD / 100 = 0.0001 SOL.
-          priceUsd: 0.0001,
+          priceUsd: 0.01,
           baseAmount: 100,
           valueUsd: 1,
           wallet: "wallet",
@@ -143,12 +143,53 @@ describe("execution panel", () => {
     expect(screen.getByRole("button", { name: "Buy" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Market" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Depth" }));
+    fireEvent.click(screen.getByRole("button", { name: "DOM" }));
     expect(screen.getByText(/trade-flow ladder, not a real order book/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sell" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Order" }));
     expect(screen.getByRole("button", { name: "Sell" })).toBeInTheDocument();
+  });
+
+  it("shows a different fill price on each side of the ticket", () => {
+    renderPanel();
+    // Reference is 0.01 USD / 100 USD per SOL = 0.0001 SOL; the default 1%
+    // slippage assumption is what the engine applies to each side.
+    expect(screen.getByRole("button", { name: "Buy" })).toHaveTextContent("0.000101");
+    expect(screen.getByRole("button", { name: "Sell" })).toHaveTextContent("0.000099");
+    expect(screen.getByRole("button", { name: "Buy" })).toHaveTextContent("est.");
+  });
+
+  it("uses the limit price on both tags when a limit is typed", () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Limit" }));
+    fireEvent.change(screen.getByLabelText(/limit price/i), { target: { value: "0.00009" } });
+
+    expect(screen.getByRole("button", { name: "Buy" })).toHaveTextContent("0.00009");
+    expect(screen.getByRole("button", { name: "Buy" })).toHaveTextContent("limit");
+    // Slippage is not applied to limit fills, so both sides show the same price.
+    expect(screen.getByRole("button", { name: "Sell" })).toHaveTextContent("0.00009");
+    expect(screen.getByRole("button", { name: "Sell" })).not.toHaveTextContent("est.");
+  });
+
+  it("buckets the DOM ladder in quote currency and splits each level by side", () => {
+    const at = Date.now();
+    renderPanel({
+      trades: [
+        // 0.01 USD at 100 USD/SOL is 0.0001 SOL — the live reference.
+        { id: "b1", side: "buy", priceUsd: 0.01, baseAmount: 100, valueUsd: 5, wallet: "w", txHash: "a", at },
+        { id: "s1", side: "sell", priceUsd: 0.01, baseAmount: 60, valueUsd: 3, wallet: "w", txHash: "b", at },
+        // ~1% above the reference, so a second bucket.
+        { id: "b2", side: "buy", priceUsd: 0.0101, baseAmount: 40, valueUsd: 2, wallet: "w", txHash: "c", at },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "DOM" }));
+
+    // One bucket, priced in the quote currency, with both sides attributed.
+    expect(screen.getByTitle(/\$5\.00 bought · \$3\.00 sold · 2 trades/)).toBeInTheDocument();
+    expect(screen.getByText("0.0001")).toBeInTheDocument();
+    expect(screen.queryByText("0.01")).not.toBeInTheDocument();
   });
 
   it("drives the amount from the balance slider", () => {

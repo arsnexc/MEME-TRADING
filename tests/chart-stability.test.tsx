@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { Candle } from "@/lib/market-data/types";
+import type { Candle, MarketTrade } from "@/lib/market-data/types";
 
 /**
  * The chart must survive data refreshes and live ticks without snapping back.
@@ -98,7 +98,12 @@ function bars(count = 30, lastClose = 0.0125): Candle[] {
 
 const QUOTES = { SOL: { usd: 105.74, at: 1 }, ETH: { usd: 2_400, at: 1 }, fetchedAt: 1 };
 
-function view(props: { candles: Candle[]; livePrice?: number | null; livePriceAt?: number | null }) {
+function view(props: {
+  candles: Candle[];
+  livePrice?: number | null;
+  livePriceAt?: number | null;
+  marketTrades?: MarketTrade[];
+}) {
   return (
     <TooltipProvider>
       <ChartPanel
@@ -115,6 +120,7 @@ function view(props: { candles: Candle[]; livePrice?: number | null; livePriceAt
         quotePrices={QUOTES}
         currency="USD"
         paperTrades={[]}
+        marketTrades={props.marketTrades ?? []}
         lastUpdated={1}
         stale={false}
         livePrice={props.livePrice ?? null}
@@ -139,6 +145,44 @@ describe("chart does not reset on ticks or polls", () => {
     chartState.range = null;
     chartState.lastTime = 0;
     chartState.backwardsUpdates = 0;
+  });
+
+  it("tags the newest buy and sell from the public trade feed", () => {
+    const now = Date.now();
+    const trade = (id: string, side: "buy" | "sell", priceUsd: number, at: number): MarketTrade => ({
+      id,
+      side,
+      priceUsd,
+      baseAmount: 1,
+      valueUsd: priceUsd,
+      wallet: "wallet",
+      txHash: `tx-${id}`,
+      at,
+    });
+
+    const { container } = render(
+      view({
+        candles: bars(),
+        marketTrades: [
+          trade("1", "buy", 0.01255, now - 5_000),
+          trade("2", "sell", 0.0124, now - 3_000),
+          trade("3", "buy", 0.0126, now - 1_000),
+        ],
+      }),
+    );
+
+    expect(screen.getByText(/last trades/i)).toBeInTheDocument();
+    // Newest trade of each side wins: the 0.0125 buy is superseded. The tags
+    // are split text nodes, so assert on the block's text content.
+    const tags = screen.getByText(/last trades/i).parentElement?.textContent ?? "";
+    expect(tags).toContain("B $0.0126");
+    expect(tags).toContain("S $0.0124");
+    expect(container.textContent).not.toContain("0.01255");
+  });
+
+  it("omits the tags when the pool has no trades", () => {
+    render(view({ candles: bars() }));
+    expect(screen.queryByText(/last trades/i)).not.toBeInTheDocument();
   });
 
   it("ignores a poll that returns the same window as a fresh array", () => {

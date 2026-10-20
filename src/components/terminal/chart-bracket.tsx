@@ -64,6 +64,10 @@ export function ChartBracket({
   const [tp, setTp] = useState<Point | null>(null);
   const [sl, setSl] = useState<Point | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  /** A dragged level that is waiting for the trader to confirm or discard it. */
+  const [pending, setPending] = useState<DragState | null>(null);
+  const [pendingY, setPendingY] = useState<number | null>(null);
+  const [rejected, setRejected] = useState<BracketLevel | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
 
   const measure = useCallback(() => {
@@ -86,7 +90,8 @@ export function ChartBracket({
     setEntry(toPoint(data.entryQuote));
     setTp(toPoint(data.takeProfitQuote));
     setSl(toPoint(data.stopLossQuote));
-  }, [data.entryQuote, data.stopLossQuote, data.takeProfitQuote, multiplier, seriesRef]);
+    setPendingY(pending ? toPoint(pending.price)?.y ?? null : null);
+  }, [data.entryQuote, data.stopLossQuote, data.takeProfitQuote, multiplier, pending, seriesRef]);
 
   const measureRef = useRef(measure);
   measureRef.current = measure;
@@ -130,6 +135,9 @@ export function ChartBracket({
     event.stopPropagation();
     const initial = level === "tp" ? data.takeProfitQuote : data.stopLossQuote;
     if (initial == null) return;
+    // A fresh drag replaces any unconfirmed edit instead of stacking them.
+    setPending(null);
+    setRejected(null);
     (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
     setDrag({ level, price: initial });
   };
@@ -146,9 +154,40 @@ export function ChartBracket({
     const price = drag.price;
     setDrag(null);
     if (validateLevel(drag.level, price, data.entryQuote)) {
-      onSetLevel(drag.level, price);
+      // A drag never writes straight to the account: it stages the level and
+      // waits for Confirm, so a stray drag cannot silently move someone's exit.
+      setPending({ level: drag.level, price });
+      setRejected(null);
+      return;
     }
+    setRejected(drag.level);
+    window.setTimeout(() => setRejected(null), 2_500);
   };
+
+  const commitPending = useCallback(() => {
+    if (!pending) return;
+    onSetLevel(pending.level, pending.price);
+    setPending(null);
+  }, [onSetLevel, pending]);
+
+  const discardPending = useCallback(() => setPending(null), []);
+
+  // Enter confirms a staged level, Escape discards it — the same contract as
+  // the on-chart toolbar.
+  useEffect(() => {
+    if (!pending) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setPending(null);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        commitPending();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pending, commitPending]);
 
   const pnlPositive = data.netPnlQuote >= 0;
   const entryY = entry?.y ?? null;
@@ -202,6 +241,73 @@ export function ChartBracket({
         </div>
       ) : null}
 
+      {/* Staged level: the line is drawn, nothing is written until Confirm */}
+      {pending && pendingY != null ? (
+        <>
+          <div className="absolute inset-x-0" style={{ top: pendingY }}>
+            <div
+              className={cn(
+                "h-px w-full border-t border-dashed",
+                pending.level === "tp" ? "border-buy" : "border-sell",
+              )}
+            />
+            <div className="pointer-events-none absolute right-14 -top-2.5">
+              <span
+                className={cn(
+                  "num rounded-[2px] border border-dashed bg-[#121212] px-1 text-[9px]",
+                  pending.level === "tp" ? "border-buy/60 text-buy" : "border-sell/60 text-sell",
+                )}
+              >
+                {pending.level.toUpperCase()} {formatQuotePrice(pending.price)} · unconfirmed
+              </span>
+            </div>
+          </div>
+
+          <div
+            role="group"
+            aria-label={`${pending.level === "tp" ? "Take profit" : "Stop loss"} change pending`}
+            className="pointer-events-auto absolute left-2 flex -translate-y-1/2 items-center gap-1 rounded-[2px] border border-border-strong bg-[#111111]/95 px-1 py-0.5 shadow-lg shadow-black/40"
+            style={{ top: pendingY }}
+          >
+            <span className={cn("text-[9px] font-semibold", pending.level === "tp" ? "text-buy" : "text-sell")}>
+              {pending.level === "tp" ? "TP" : "SL"}
+            </span>
+            <span className="num text-[10px] text-fg">{formatQuotePrice(pending.price)}</span>
+            <span className="num text-[9px] text-muted">
+              {formatPercent(levelPct(pending.price, data.entryQuote) ?? 0, { sign: true })}
+            </span>
+            <button
+              type="button"
+              onClick={discardPending}
+              aria-label={`Discard ${pending.level === "tp" ? "take profit" : "stop loss"} change`}
+              className="h-5 rounded-[2px] px-1.5 text-[9px] text-muted transition-colors hover:bg-panel-3 hover:text-fg"
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={commitPending}
+              aria-label={`Confirm ${pending.level === "tp" ? "take profit" : "stop loss"} change`}
+              className={cn(
+                "h-5 rounded-[2px] px-1.5 text-[9px] font-semibold text-black transition-colors",
+                pending.level === "tp" ? "bg-buy hover:bg-buy/85" : "bg-sell text-white hover:bg-sell/85",
+              )}
+            >
+              Confirm
+            </button>
+          </div>
+        </>
+      ) : null}
+
+      {rejected ? (
+        <div className="pointer-events-none absolute inset-x-0 top-9 z-10 flex justify-center">
+          <span className="rounded-[2px] border border-warn/50 bg-[#111111]/95 px-1.5 py-0.5 text-[9px] text-warn">
+            {rejected === "tp" ? "Take profit must stay above entry" : "Stop loss must stay below entry"} — drag not
+            applied
+          </span>
+        </div>
+      ) : null}
+
       {/* Live preview while dragging a level */}
       {drag && dragPct != null ? (
         <div className="absolute inset-x-0" style={{ top: (drag.level === "tp" ? 8 : 28) }}>
@@ -237,7 +343,10 @@ export function ChartBracket({
           <button
             type="button"
             aria-pressed={data.takeProfitQuote != null}
-            onClick={() => onSetLevel("tp", toggleLevel("tp", data.takeProfitQuote, data.entryQuote))}
+            onClick={() => {
+              setPending(null);
+              onSetLevel("tp", toggleLevel("tp", data.takeProfitQuote, data.entryQuote));
+            }}
             title={
               data.takeProfitQuote != null
                 ? "Take profit is on — click to remove it"
@@ -255,7 +364,10 @@ export function ChartBracket({
           <button
             type="button"
             aria-pressed={data.stopLossQuote != null}
-            onClick={() => onSetLevel("sl", toggleLevel("sl", data.stopLossQuote, data.entryQuote))}
+            onClick={() => {
+              setPending(null);
+              onSetLevel("sl", toggleLevel("sl", data.stopLossQuote, data.entryQuote));
+            }}
             title={
               data.stopLossQuote != null
                 ? "Stop loss is on — click to remove it"

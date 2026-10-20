@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -58,7 +58,7 @@ import {
   type NetworkId,
 } from "@/lib/constants";
 import { TIMEFRAME_SECONDS, mergeLiveTick, scaleCandle } from "@/lib/market-data/live-candle";
-import type { Candle, QuotePrices } from "@/lib/market-data/types";
+import type { Candle, MarketTrade, QuotePrices } from "@/lib/market-data/types";
 import type { Trade } from "@/lib/trading/types";
 import { formatCompact, formatNumber, formatPrice, priceDecimalsFor, expandExponential } from "@/lib/formatting";
 import { cn } from "@/lib/utils";
@@ -94,6 +94,7 @@ export function ChartPanel({
   quotePrices,
   currency,
   paperTrades,
+  marketTrades = [],
   lastUpdated,
   stale,
   livePrice,
@@ -116,6 +117,12 @@ export function ChartPanel({
   quotePrices: QuotePrices;
   currency: DisplayCurrency;
   paperTrades: Trade[];
+  /**
+   * Latest public trades for the pool. The newest buy and sell are shown as
+   * price tags: a spot pool has no bid/ask quote, so the last executed prices
+   * are the only honest per-side prices available.
+   */
+  marketTrades?: MarketTrade[];
   lastUpdated: number | null;
   stale: boolean;
   /** Latest provider price in USD. Drives the forming candle between polls. */
@@ -152,6 +159,17 @@ export function ChartPanel({
   const quoteUsd = currency !== "USD" ? quotePrices[currency]?.usd ?? null : 1;
   const effectiveCurrency: DisplayCurrency = currency !== "USD" && !quoteUsd ? "USD" : currency;
   const factor = effectiveCurrency === "USD" ? 1 : 1 / (quoteUsd as number);
+
+  const lastSideTrades = useMemo(() => {
+    let buy: MarketTrade | null = null;
+    let sell: MarketTrade | null = null;
+    for (const trade of marketTrades) {
+      if (!Number.isFinite(trade.priceUsd) || trade.priceUsd <= 0) continue;
+      if (trade.side === "buy" && (!buy || trade.at > buy.at)) buy = trade;
+      if (trade.side === "sell" && (!sell || trade.at > sell.at)) sell = trade;
+    }
+    return { buy, sell };
+  }, [marketTrades]);
 
   const toolRef = useRef(tool);
   toolRef.current = tool;
@@ -650,6 +668,24 @@ export function ChartPanel({
                 <span>C <span className="text-fg">{chartPrice(legend.close, effectiveCurrency)}</span></span>
               </span>
               {stale ? <span className="text-warn">stale</span> : null}
+              {lastSideTrades.buy || lastSideTrades.sell ? (
+                <span
+                  className="num flex w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[10px] text-faint"
+                  title="Last executed public trade on each side. A spot pool publishes no bid/ask quote, so these are trades, not a spread."
+                >
+                  <span className="uppercase tracking-[0.12em]">Last trades</span>
+                  {lastSideTrades.buy ? (
+                    <span className="text-buy">
+                      B {chartPrice(lastSideTrades.buy.priceUsd * factor, effectiveCurrency)}
+                    </span>
+                  ) : null}
+                  {lastSideTrades.sell ? (
+                    <span className="text-sell">
+                      S {chartPrice(lastSideTrades.sell.priceUsd * factor, effectiveCurrency)}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
             </div>
           ) : null}
 
