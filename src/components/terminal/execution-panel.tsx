@@ -43,6 +43,7 @@ export function ExecutionPanel({
   hasTradeWindow,
   trades,
   onRefreshPrice,
+  addRequest = null,
 }: {
   token: TokenRef;
   market: MarketToken;
@@ -55,6 +56,8 @@ export function ExecutionPanel({
   hasTradeWindow: boolean;
   trades: MarketTrade[];
   onRefreshPrice: () => void;
+  /** Prefill request from the position bar: switch to Buy with this notional. */
+  addRequest?: { id: number; amount: number } | null;
 }) {
   const now = useNow(5_000);
   const hydrated = useHydrated();
@@ -78,6 +81,7 @@ export function ExecutionPanel({
   const priceFresh = priceAge != null && priceAge < 60_000;
   const displayAge = referenceAt ? formatRelativeTime(referenceAt, now) : "unknown";
 
+  const panelRef = useRef<HTMLElement | null>(null);
   const [panelTab, setPanelTab] = useState<"order" | "depth">("order");
   const [side, setSide] = useState<Side>("buy");
   const [orderType, setOrderType] = useState<OrderType>("market");
@@ -95,6 +99,21 @@ export function ExecutionPanel({
   useEffect(() => {
     setFeePercentInput((feeRateBps / 100).toString());
   }, [feeRateBps]);
+
+  // "BUY" on the position bar opens the ticket on the buy side with the same
+  // notional pre-filled. Nothing is submitted for the user.
+  useEffect(() => {
+    if (!addRequest) return;
+    setPanelTab("order");
+    setSide("buy");
+    setOrderType("market");
+    setAmountInput(addRequest.amount > 0 ? formatInputValue(addRequest.amount, 9) : "");
+    setMessage(null);
+    const node = panelRef.current;
+    if (node && typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [addRequest]);
 
   const amount = parseAmountInput(amountInput, { maxDecimals: side === "buy" ? 9 : 9 });
   const limitPrice = parseAmountInput(limitPriceInput, { maxDecimals: 12 });
@@ -392,7 +411,11 @@ export function ExecutionPanel({
     : null;
 
   return (
-    <aside className="flex min-h-0 flex-col border-border bg-[#0b0b0b] xl:border-l" aria-label="Paper order execution">
+    <aside
+      ref={panelRef}
+      className="flex min-h-0 flex-col border-border bg-[#111111] xl:border-l"
+      aria-label="Paper order execution"
+    >
       <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-2">
         <span className="flex h-4 w-4 items-center justify-center rounded-[2px] bg-panel-3 text-[8px] font-bold text-fg">
           {token.symbol.slice(0, 2).toUpperCase()}

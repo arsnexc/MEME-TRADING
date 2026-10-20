@@ -84,7 +84,7 @@ export function BottomPanel({
   );
 
   return (
-    <section className="flex min-h-[240px] flex-col bg-[#0b0b0b]" aria-label="Token analytics terminal">
+    <section className="flex min-h-[240px] flex-col bg-[#111111]" aria-label="Token analytics terminal">
       <div
         className="flex items-center gap-0.5 overflow-x-auto border-b border-border px-2 panel-scroll"
         role="tablist"

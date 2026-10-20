@@ -83,7 +83,9 @@ The terminal follows a TradingView-style layout: one dense top bar (brand, desti
 
 Two tabs share the right panel: **Order** (the ticket) and **Depth** — a ladder aggregated from the most recent public trades, explicitly labelled as trade flow rather than a real order book. We never claim resting liquidity the providers do not give us.
 
-Palette: pure black base (`#000`), `#0b0b0b` chrome, `#121212`–`#1a1a1a` panels and `#262626` borders, with market colours `#0ecb81` up / `#f23645` down and `#2962ff` on the buy side, matching the reference terminal. Network brand colours are not used for chips or text; a network is identified by its name and a neutral badge.
+When a position is open on the terminal, a **position bar** sits at the bottom of the screen: pair, size, entry, mark, time held, floating PnL in the quote currency and an estimate in USD, and a progress line drawn from the stop level to the take-profit level with markers at SL, entry, current price and TP. **SELL** needs a second click to confirm and closes the whole position at market; **BUY** opens the ticket on the buy side with the same notional pre-filled and does not submit anything; the pencil opens the exit editor. Levels that were never set are labelled "not set" rather than guessed.
+
+Palette: deep charcoal base (`#0d0d0d`), `#111111` chrome, `#121212`–`#1e1e1e` panels and `#262626` borders, with market colours `#0ecb81` up / `#f23645` down and `#2962ff` on the buy side, matching the reference terminal. Network brand colours are not used for chips or text; a network is identified by its name and a neutral badge.
 
 ---
 
@@ -187,6 +189,8 @@ The suite runs in Node/jsdom with mocked upstream responses:
 - **`tests/rate-limit.test.ts`** — local window exhaustion, cooldown after an upstream 429, cached responses not consuming budget, batched multi-pool quote refresh (one GeckoTerminal call for many pools), and SOL/ETH reference prices derived from DEX Screener instead of GeckoTerminal.
 - **`tests/ui.test.tsx`** — positions table (live vs stale sell blocking), order cancellation, callout limits and local save.
 - **`tests/execution.test.tsx`** — full market-buy flow through the order ticket, stale-price blocking, balance validation, limit placement, sell-without-position messaging.
+- **`tests/position-progress.test.ts`** — progress-bar geometry: marker order, price travel toward the target, clamping past a level, missing or mis-sided levels, and PnL net of the exit fee.
+- **`tests/position-bar.test.tsx`** — the bottom trade bar: readouts, two-step sell confirmation, add-to-position handoff, exit editor, "not set" states.
 - **`tests/protection.test.ts`** — cash-vs-equity accounting after a buy, snapshot restore without a balance reset, take-profit/stop-loss percentage maths, bracket on buy, tick-triggered exits (with the grace window), averaging-in re-basing, level validation/clearing, and persistence of levels through sanitisation.
 - **`tests/live-candle.test.ts`** — the forming-candle merge used by the chart: close/high/low updates, rolling into the next bar, refusing to fabricate a run of missing bars.
 

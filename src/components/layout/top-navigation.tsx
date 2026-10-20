@@ -67,7 +67,7 @@ export function TopNavigation() {
   const soonActive = COMING_SOON.some((item) => isActive(item.href));
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-[#0b0b0b]">
+    <header className="sticky top-0 z-40 border-b border-border bg-[#111111]">
       <div className="flex h-11 items-center gap-1 px-2">
         <Logo />
 

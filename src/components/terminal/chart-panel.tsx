@@ -179,7 +179,7 @@ export function ChartPanel({
     const chart = createChart(container, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#000000" },
+        background: { type: ColorType.Solid, color: "#0d0d0d" },
         textColor: "#9b9b9b",
         fontFamily:
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
@@ -187,8 +187,8 @@ export function ChartPanel({
         attributionLogo: true,
       },
       grid: {
-        vertLines: { color: "#161616" },
-        horzLines: { color: "#161616" },
+        vertLines: { color: "#1a1a1a" },
+        horzLines: { color: "#1a1a1a" },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -216,7 +216,11 @@ export function ChartPanel({
       borderVisible: false,
       wickUpColor: "#0ecb81",
       wickDownColor: "#f23645",
+      // Dashed current-price line, like the reference terminal.
       priceLineVisible: true,
+      priceLineColor: "#0ecb81",
+      priceLineStyle: LineStyle.Dashed,
+      priceLineWidth: 1,
       lastValueVisible: true,
     });
     const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -270,8 +274,8 @@ export function ChartPanel({
     chart.applyOptions({
       crosshair: { mode: crosshairVisible ? CrosshairMode.Normal : CrosshairMode.Hidden },
       grid: {
-        vertLines: { color: showGrid ? "#161616" : "transparent" },
-        horzLines: { color: showGrid ? "#161616" : "transparent" },
+        vertLines: { color: showGrid ? "#1a1a1a" : "transparent" },
+        horzLines: { color: showGrid ? "#1a1a1a" : "transparent" },
       },
     });
     chart.priceScale("right").applyOptions({ mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal });
@@ -539,7 +543,7 @@ export function ChartPanel({
   return (
     <section className="relative flex min-h-[320px] flex-1 flex-col bg-bg" aria-label={`${symbol} price chart`}>
       <div className="flex min-h-0 flex-1">
-        <div className="hidden w-9 shrink-0 flex-col items-center gap-0.5 border-r border-border bg-[#0b0b0b] py-1 sm:flex">
+        <div className="hidden w-9 shrink-0 flex-col items-center gap-0.5 border-r border-border bg-[#111111] py-1 sm:flex">
           {railButtons}
         </div>
 
@@ -570,7 +574,7 @@ export function ChartPanel({
           </div>
 
           {measure && measure.end != null && measurePct != null ? (
-            <div className="absolute right-2 top-8 z-10 flex items-center gap-2 rounded-sm border border-border-strong bg-[#0b0b0b]/95 px-2 py-1 text-2xs">
+            <div className="absolute right-2 top-8 z-10 flex items-center gap-2 rounded-sm border border-border-strong bg-[#111111]/95 px-2 py-1 text-2xs">
               <SlidersHorizontal className="h-3 w-3 text-fg" />
               <span className="num text-fg">
                 {measure.end >= measure.start ? "+" : "−"}
@@ -594,7 +598,7 @@ export function ChartPanel({
           ) : null}
 
           {measure && measure.end == null ? (
-            <div className="absolute left-2 top-8 z-10 rounded-sm border border-border-strong bg-[#0b0b0b]/90 px-1.5 py-0.5 text-2xs text-muted">
+            <div className="absolute left-2 top-8 z-10 rounded-sm border border-border-strong bg-[#111111]/90 px-1.5 py-0.5 text-2xs text-muted">
               Click a second point to measure
             </div>
           ) : null}
@@ -630,7 +634,7 @@ export function ChartPanel({
         </div>
       </div>
 
-      <div className="flex h-7 shrink-0 items-center gap-2 border-t border-border bg-[#0b0b0b] px-1.5 text-2xs text-faint">
+      <div className="flex h-7 shrink-0 items-center gap-2 border-t border-border bg-[#111111] px-1.5 text-2xs text-faint">
         {timeframeStrip}
         <span className="hidden lg:inline">OHLCV GeckoTerminal · last bar updates on every tick</span>
         <div className="ml-auto flex items-center gap-2">

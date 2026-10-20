@@ -11,6 +11,8 @@ import { TokenHeader } from "./token-header";
 import { ChartPanel } from "./chart-panel";
 import { BottomPanel } from "./bottom-panel";
 import { ExecutionPanel } from "./execution-panel";
+import { PositionBar } from "./position-bar";
+import { ProtectionDialog } from "./protection-dialog";
 import type { PositionPrice } from "./positions-table";
 import { fetchOhlcvClient, fetchTokenClient, fetchTradesClient } from "@/lib/market-data/client";
 import type { MarketToken, QuotePrices, TokenDetailResponse } from "@/lib/market-data/types";
@@ -53,6 +55,8 @@ export function TerminalView({
   const processTicks = usePaperStore((state) => state.processTicks);
 
   const [timeframe, setTimeframe] = useState<ChartTimeframe>("5m");
+  const [exitsFor, setExitsFor] = useState<Position | null>(null);
+  const [addRequest, setAddRequest] = useState<{ id: number; amount: number } | null>(null);
 
   const marketFetcher = useCallback(
     (signal: AbortSignal) => fetchTokenClient({ network, pool, token: tokenAddress, signal }),
@@ -286,6 +290,17 @@ export function TerminalView({
     };
   const marketTrades = tradesQuery.data?.trades ?? [];
   const chartCandles = chartQuery.data?.candles ?? [];
+  const currentPosition =
+    positions.find(
+      (position) =>
+        position.token.network === tokenRef.network &&
+        position.token.address.toLowerCase() === tokenRef.address.toLowerCase(),
+    ) ?? null;
+  const markQuote = currentPosition ? (priceFor(currentPosition).priceUsd ?? null) : null;
+  const markPriceQuote =
+    currentPosition && markQuote != null && quotePrices[currentPosition.quote]?.usd
+      ? markQuote / (quotePrices[currentPosition.quote]?.usd as number)
+      : null;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -361,6 +376,7 @@ export function TerminalView({
             hasTradeWindow={Boolean(tradesQuery.lastUpdated && !tradesQuery.error)}
             trades={marketTrades}
             onRefreshPrice={() => marketQuery.refresh()}
+            addRequest={addRequest}
           />
         </div>
 
@@ -384,6 +400,27 @@ export function TerminalView({
         </div>
       </div>
 
+      {currentPosition ? (
+        <PositionBar
+          position={currentPosition}
+          priceQuote={markPriceQuote}
+          quoteUsd={quotePrices[currentPosition.quote]?.usd ?? null}
+          feeRateBps={feeRateBps}
+          onSell={() => void handleSell(currentPosition, 1)}
+          onAdd={() => setAddRequest({ id: Date.now(), amount: currentPosition.costBasis })}
+          onEditExits={() => setExitsFor(currentPosition)}
+        />
+      ) : null}
+
+      {exitsFor ? (
+        <ProtectionDialog
+          position={exitsFor}
+          open
+          onOpenChange={(open) => {
+            if (!open) setExitsFor(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

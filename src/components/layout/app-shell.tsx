@@ -7,7 +7,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <TopNavigation />
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
       <AccountBar />
-      <footer className="border-t border-border bg-[#0b0b0b] px-2 py-1 text-[10px] text-faint">
+      <footer className="border-t border-border bg-[#111111] px-2 py-1 text-[10px] text-faint">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="text-muted">MEMESCOPE paper terminal</span>
           <span>GeckoTerminal + DEX Screener (public APIs)</span>

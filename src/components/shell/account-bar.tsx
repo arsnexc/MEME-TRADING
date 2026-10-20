@@ -94,7 +94,7 @@ export function AccountBar() {
   );
 
   return (
-    <div className="border-t border-border bg-[#0b0b0b]" aria-label="Paper account summary">
+    <div className="border-t border-border bg-[#111111]" aria-label="Paper account summary">
       <div className="flex items-center gap-0 overflow-x-auto panel-scroll">
         <span className="hidden shrink-0 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint sm:inline">
           Paper account

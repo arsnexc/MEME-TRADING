@@ -90,7 +90,7 @@ export function TokenHeader({
   const txns = market.txns.h24;
 
   return (
-    <div className="border-b border-border bg-[#0b0b0b]">
+    <div className="border-b border-border bg-[#111111]">
       <div className="flex h-11 items-center gap-2 overflow-x-auto px-1.5 panel-scroll">
         <Button variant="ghost" size="icon-sm" aria-label="Back to discovery" onClick={() => history.back()}>
           <ChevronLeft className="h-4 w-4" />
