@@ -23,6 +23,14 @@ export function sortValue(token: MarketToken, key: SortKey, timeframe: ScannerTi
       return token.volumeUsd[timeframe];
     case "change":
       return token.changePct[timeframe];
+    case "price":
+      return token.priceUsd;
+    case "age":
+      return token.poolCreatedAt;
+    case "txns": {
+      const txns = aggregateTransactions(token, timeframe);
+      return txns ? txns.buys + txns.sells : null;
+    }
     default:
       return null;
   }

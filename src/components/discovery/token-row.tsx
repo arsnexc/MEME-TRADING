@@ -1,21 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight, ExternalLink, MoreHorizontal, Star } from "lucide-react";
+import { ExternalLink, Star } from "lucide-react";
 import { NetworkBadge } from "@/components/ui/network-badge";
 import { CopyButton } from "@/components/ui/copy-button";
-import { Badge } from "@/components/ui/badge";
 import { TokenAvatar } from "@/components/token/token-avatar";
 import { SecurityBadges } from "@/components/token/security-badges";
 import { SocialLinks } from "@/components/token/social-links";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useDisplayCurrency } from "@/hooks/use-display-currency";
 import { aggregateTransactions } from "@/lib/market-view";
-import { formatAge } from "@/lib/formatting";
+import { formatAge, formatPercent, formatTimestamp } from "@/lib/formatting";
 import type { MarketToken } from "@/lib/market-data/types";
 import type { ScannerTimeframe } from "@/lib/constants";
 import { NETWORKS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+
+const COUNT_FORMAT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+
+/** 25_900 → "25.9K"; counts in a 104px cell must stay one line. */
+function compactCount(value: number): string {
+  return COUNT_FORMAT.format(value);
+}
 
 export function transactionRatio(token: MarketToken, timeframe: ScannerTimeframe) {
   const txns = aggregateTransactions(token, timeframe);
@@ -26,11 +32,14 @@ export function transactionRatio(token: MarketToken, timeframe: ScannerTimeframe
 
 export function ChangeValue({ value }: { value: number | null }) {
   if (value == null) return <span className="num text-faint">—</span>;
-  const positive = value >= 0;
   return (
-    <span className={cn("num inline-flex items-center gap-0.5", positive ? "text-buy" : "text-sell")}>
-      {positive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
-      {Math.abs(value).toFixed(2)}%
+    <span
+      className={cn(
+        "num font-medium",
+        value > 0 ? "text-buy" : value < 0 ? "text-sell" : "text-muted",
+      )}
+    >
+      {formatPercent(value, { sign: true })}
     </span>
   );
 }
@@ -43,81 +52,107 @@ export function terminalHref(token: MarketToken): string {
   }).toString()}`;
 }
 
+/**
+ * Two-line token cell: ticker + chain badge on top, project name and quiet
+ * utility icons underneath. The icons are always laid out but only fade in on
+ * hover, so rows stay calm and nothing shifts when the pointer arrives.
+ */
 export function TokenIdentity({
   token,
-  compact = false,
   href,
+  compact = false,
 }: {
   token: MarketToken;
-  compact?: boolean;
   href?: string;
+  compact?: boolean;
 }) {
+  const symbolClass = cn(
+    "truncate font-semibold leading-none text-fg transition-colors group-hover:text-white",
+    compact ? "text-[13px]" : "text-[12.5px]",
+  );
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <TokenAvatar src={token.imageUrl} symbol={token.symbol} size={compact ? 22 : 26} />
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5">
+      <TokenAvatar src={token.imageUrl} symbol={token.symbol} size={compact ? 28 : 24} />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-1.5">
           {href ? (
-            <Link
-              href={href}
-              onClick={(event) => event.stopPropagation()}
-              className="truncate text-xs font-semibold leading-tight text-fg hover:text-[#e5e5e5] focus-visible:outline-none"
-            >
+            <Link href={href} onClick={(event) => event.stopPropagation()} className={symbolClass}>
               {token.symbol}
             </Link>
           ) : (
-            <span className="truncate text-xs font-semibold leading-tight text-fg">{token.symbol}</span>
+            <span className={symbolClass}>{token.symbol}</span>
           )}
-          <NetworkBadge network={token.network} />
+          <NetworkBadge network={token.network} className="px-1 py-0.5 text-[9px]" />
           {token.dexId ? (
-            <span className="hidden truncate text-2xs text-faint lg:inline">{token.dexId}</span>
+            <span className="hidden truncate text-[10px] text-faint xl:inline">{token.dexId}</span>
           ) : null}
         </div>
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-2xs text-faint">
-          <span className="max-w-[130px] truncate text-muted">{token.name}</span>
-          <CopyButton value={token.tokenAddress} label="Copy contract address" />
-          <Tooltip content={`${NETWORKS[token.network].explorerName}: ${token.tokenAddress}`}>
-            <a
-              href={NETWORKS[token.network].tokenUrl(token.tokenAddress)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(event) => event.stopPropagation()}
-              className="text-faint transition-colors hover:text-fg"
-              aria-label="Open contract on block explorer"
-            >
-              <ExternalLink className="h-2.5 w-2.5" />
-            </a>
-          </Tooltip>
-          <SocialLinks socials={token.socials} websites={token.websites} />
+        <div className="mt-[3px] flex min-w-0 items-center gap-1.5 text-[10px] leading-none">
+          <span className="max-w-[190px] truncate text-muted">{token.name}</span>
+          <span className="flex shrink-0 items-center gap-1.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+            <CopyButton value={token.tokenAddress} label="Copy contract address" />
+            <Tooltip content={`${NETWORKS[token.network].explorerName}: ${token.tokenAddress}`}>
+              <a
+                href={NETWORKS[token.network].tokenUrl(token.tokenAddress)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(event) => event.stopPropagation()}
+                className="inline-flex text-faint transition-colors hover:text-fg"
+                aria-label="Open contract on block explorer"
+              >
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            </Tooltip>
+            <SocialLinks socials={token.socials} websites={token.websites} />
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
+/** Buy/sell split: counts on one line, a 3px two-tone bar underneath. */
 export function TxnCell({ token, timeframe }: { token: MarketToken; timeframe: ScannerTimeframe }) {
   const ratio = transactionRatio(token, timeframe);
   if (!ratio) {
     return (
       <Tooltip content={`Buy/sell counts are unavailable for this pool on the ${timeframe} window.`}>
-        <span className="num text-faint">—</span>
+        <span className="num text-[11px] text-faint">—</span>
       </Tooltip>
     );
   }
   return (
     <Tooltip
-      content={`${ratio.buys.toLocaleString()} buys · ${ratio.sells.toLocaleString()} sells in the ${timeframe} window (GeckoTerminal).`}
+      content={`${ratio.buys.toLocaleString()} buys · ${ratio.sells.toLocaleString()} sells in the ${timeframe} window (GeckoTerminal). Not an order book.`}
     >
-      <div className="w-[84px]">
-        <div className="flex items-center justify-between gap-1 text-2xs">
-          <span className="num text-buy">{ratio.buys.toLocaleString()}</span>
-          <span className="num text-sell">{ratio.sells.toLocaleString()}</span>
+      <div className="w-full">
+        <div className="flex items-baseline justify-between gap-1 text-[10px] leading-none">
+          <span className="num text-buy">{compactCount(ratio.buys)}</span>
+          <span className="num text-sell">{compactCount(ratio.sells)}</span>
         </div>
-        <div className="mt-1 flex h-[3px] w-full overflow-hidden rounded-full bg-panel-3">
-          <span className="h-full bg-buy/80" style={{ width: `${ratio.buyPct}%` }} />
-          <span className="h-full bg-sell/80" style={{ width: `${100 - ratio.buyPct}%` }} />
+        <div className="mt-1 flex h-[3px] w-full gap-px overflow-hidden rounded-[1px] bg-panel-3">
+          <span className="h-full bg-buy/90" style={{ width: `${ratio.buyPct}%` }} />
+          <span className="h-full bg-sell/90" style={{ width: `${100 - ratio.buyPct}%` }} />
         </div>
       </div>
+    </Tooltip>
+  );
+}
+
+function RowAction({ token, onOpen }: { token: MarketToken; onOpen: (token: MarketToken) => void }) {
+  return (
+    <Tooltip content={`Open ${token.symbol} and buy with the ${token.quote} paper account`}>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpen(token);
+        }}
+        className="h-6 w-[58px] rounded-[3px] bg-info text-[11px] font-semibold leading-none text-white transition-colors hover:bg-[#1f57ff]"
+        aria-label={`Buy ${token.symbol} with the ${token.quote} paper account`}
+      >
+        Buy
+      </button>
     </Tooltip>
   );
 }
@@ -136,16 +171,17 @@ export function TokenRow({
   onToggleWatch: (token: MarketToken) => void;
 }) {
   const { formatPrice, formatMoney } = useDisplayCurrency();
-  const quote = token.quote;
+  const cell = "border-b border-[#1f1f1f] align-middle";
+  const numeric = cn(cell, "whitespace-nowrap px-2 text-right");
 
   return (
     <tr
       onClick={() => onOpen(token)}
-      className="group cursor-pointer border-b border-border/60 transition-colors hover:bg-panel-2/70"
+      className="group h-10 cursor-pointer transition-colors hover:bg-[#161616]"
       data-testid={`token-row-${token.symbol}`}
     >
-      <td className="py-1.5 pl-2.5 pr-2">
-        <div className="flex items-center gap-1.5">
+      <td className={cn(cell, "pl-3 pr-3")}>
+        <div className="flex min-w-0 items-center gap-1.5">
           <button
             type="button"
             aria-label={watched ? `Remove ${token.symbol} from trackers` : `Add ${token.symbol} to trackers`}
@@ -154,70 +190,57 @@ export function TokenRow({
               onToggleWatch(token);
             }}
             className={cn(
-              "rounded-[2px] p-0.5 transition-colors",
-              watched ? "text-warn" : "text-faint opacity-0 hover:text-fg group-hover:opacity-100 focus-visible:opacity-100",
+              "-ml-0.5 shrink-0 rounded-[2px] p-0.5 transition-all",
+              watched
+                ? "text-fg"
+                : "text-faint opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:text-fg",
             )}
           >
-            <Star className={cn("h-3 w-3", watched && "fill-warn")} />
+            <Star className={cn("h-3 w-3", watched && "fill-fg")} />
           </button>
           <div className="min-w-0 flex-1">
             <TokenIdentity token={token} href={terminalHref(token)} />
           </div>
         </div>
       </td>
-      <td className="px-2 py-1.5 text-right">
-        <div className="num text-xs text-fg">{formatPrice(token.priceUsd)}</div>
-        <div className="num mt-0.5 text-2xs text-faint">
-          {token.fdvUsd && token.priceUsd && token.fdvUsd > 0
-            ? `FDV ${formatMoney(token.fdvUsd, { compact: true })}`
-            : `—`}
-        </div>
-      </td>
-      <td className="px-2 py-1.5 text-right">
+      <td className={cn(numeric, "text-[12px] font-medium text-fg")}>{formatPrice(token.priceUsd)}</td>
+      <td className={cn(numeric, "text-[12px]")}>
         <ChangeValue value={token.changePct[timeframe]} />
       </td>
-      <td className="px-2 py-1.5 text-right">
-        <div className="num text-xs text-fg">{formatAge(token.poolCreatedAt)}</div>
-        <div className="text-2xs text-faint">pool age</div>
+      <td
+        className={cn(numeric, "text-[11px] text-muted")}
+        title={token.poolCreatedAt ? `Pool created ${formatTimestamp(token.poolCreatedAt)}` : undefined}
+      >
+        {formatAge(token.poolCreatedAt)}
       </td>
-      <td className="px-2 py-1.5 text-right">
-        <div className="num text-xs text-fg">{formatMoney(token.marketCapUsd, { compact: true })}</div>
-        <div className="text-2xs text-faint">{token.marketCapIsFdv ? "FDV*" : "mkt cap"}</div>
+      <td className={cn(numeric, "text-[12px] text-fg")}>
+        <Tooltip
+          content={
+            token.marketCapIsFdv
+              ? "Fully-diluted valuation: circulating supply is unavailable from the provider."
+              : "Market cap reported by the provider."
+          }
+        >
+          <span className="num">
+            {formatMoney(token.marketCapUsd, { compact: true })}
+            {token.marketCapIsFdv ? <span className="text-faint">*</span> : null}
+          </span>
+        </Tooltip>
       </td>
-      <td className="px-2 py-1.5 text-right">
-        <div className="num text-xs text-fg">{formatMoney(token.liquidityUsd, { compact: true })}</div>
-        <div className="text-2xs text-faint">liquidity</div>
+      <td className={cn(numeric, "text-[12px] text-fg")}>{formatMoney(token.liquidityUsd, { compact: true })}</td>
+      <td className={cn(numeric, "text-[12px] text-fg")}>
+        <Tooltip content={`${timeframe.toUpperCase()} traded volume across this pool (GeckoTerminal).`}>
+          <span className="num">{formatMoney(token.volumeUsd[timeframe], { compact: true })}</span>
+        </Tooltip>
       </td>
-      <td className="px-2 py-1.5 text-right">
-        <div className="num text-xs text-fg">{formatMoney(token.volumeUsd[timeframe], { compact: true })}</div>
-        <div className="text-2xs text-faint">{timeframe} volume</div>
-      </td>
-      <td className="px-2 py-1.5">
+      <td className={cn(cell, "px-2")}>
         <TxnCell token={token} timeframe={timeframe} />
       </td>
-      <td className="px-2 py-1.5">
-        <SecurityBadges security={token.security} />
+      <td className={cn(cell, "whitespace-nowrap px-2")}>
+        <SecurityBadges security={token.security} compact />
       </td>
-      <td className="px-2.5 py-1.5 text-right">
-        <div className="flex items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpen(token);
-            }}
-            className={cn(
-              "h-6 rounded-[2px] border px-2 text-2xs font-semibold transition-colors",
-              quote === "SOL"
-                ? "border-[#e5e5e5]/40 bg-[#e5e5e5]/10 text-[#d4d4d4] hover:bg-[#e5e5e5]/20"
-                : "border-[#a3a3a3]/40 bg-[#a3a3a3]/10 text-[#d4d4d4] hover:bg-[#a3a3a3]/20",
-            )}
-            aria-label={`Open ${token.symbol} paper trading terminal using the ${quote} account`}
-          >
-            Buy {quote}
-          </button>
-          <MoreHorizontal className="h-3 w-3 text-faint" />
-        </div>
+      <td className={cn(cell, "py-2 pl-2 pr-3 text-right")}>
+        <RowAction token={token} onOpen={onOpen} />
       </td>
     </tr>
   );
@@ -237,70 +260,52 @@ export function TokenCard({
   onToggleWatch: (token: MarketToken) => void;
 }) {
   const { formatPrice, formatMoney } = useDisplayCurrency();
-  const ratio = transactionRatio(token, timeframe);
   return (
-    <article className="border-b border-border px-2.5 py-2">
+    <article className="border-b border-[#1f1f1f] px-3 py-2.5">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <TokenIdentity token={token} href={terminalHref(token)} />
+          <TokenIdentity token={token} href={terminalHref(token)} compact />
         </div>
         <button
           type="button"
           aria-label={watched ? "Remove from trackers" : "Add to trackers"}
           onClick={() => onToggleWatch(token)}
-          className={cn("rounded-sm p-1", watched ? "text-warn" : "text-faint")}
+          className={cn("-mt-0.5 rounded-sm p-1", watched ? "text-fg" : "text-faint")}
         >
-          <Star className={cn("h-3.5 w-3.5", watched && "fill-warn")} />
+          <Star className={cn("h-3.5 w-3.5", watched && "fill-fg")} />
         </button>
       </div>
       <div className="mt-2 flex items-end justify-between gap-3">
         <div>
-          <div className="num text-sm font-semibold">{formatPrice(token.priceUsd)}</div>
-          <div className="mt-0.5 text-2xs">
-            <ChangeValue value={token.changePct[timeframe]} /> <span className="text-faint">· {timeframe}</span>
+          <div className="num text-sm font-semibold text-fg">{formatPrice(token.priceUsd)}</div>
+          <div className="mt-1 flex items-center gap-1.5 text-[11px]">
+            <ChangeValue value={token.changePct[timeframe]} />
+            <span className="text-faint">· {timeframe.toUpperCase()}</span>
+            <span className="text-faint">· {formatAge(token.poolCreatedAt)} old</span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => onOpen(token)}
-          className="h-7 rounded-[2px] border border-buy/30 bg-buy/10 px-3 text-2xs font-semibold text-buy"
-        >
-          Trade {token.quote}
-        </button>
+        <RowAction token={token} onOpen={onOpen} />
       </div>
-      <dl className="mt-2 grid grid-cols-3 gap-2 text-2xs">
+      <dl className="mt-2.5 grid grid-cols-3 gap-3 border-t border-[#1f1f1f] pt-2 text-[10px]">
         <div>
           <dt className="text-faint">Mkt cap</dt>
-          <dd className="num mt-0.5 text-fg">{formatMoney(token.marketCapUsd, { compact: true })}</dd>
+          <dd className="num mt-0.5 text-[11px] text-fg">{formatMoney(token.marketCapUsd, { compact: true })}</dd>
         </div>
         <div>
           <dt className="text-faint">Liquidity</dt>
-          <dd className="num mt-0.5 text-fg">{formatMoney(token.liquidityUsd, { compact: true })}</dd>
+          <dd className="num mt-0.5 text-[11px] text-fg">{formatMoney(token.liquidityUsd, { compact: true })}</dd>
         </div>
         <div>
-          <dt className="text-faint">{timeframe} vol</dt>
-          <dd className="num mt-0.5 text-fg">{formatMoney(token.volumeUsd[timeframe], { compact: true })}</dd>
+          <dt className="text-faint">{timeframe.toUpperCase()} volume</dt>
+          <dd className="num mt-0.5 text-[11px] text-fg">{formatMoney(token.volumeUsd[timeframe], { compact: true })}</dd>
         </div>
       </dl>
-      <div className="mt-2 flex items-center justify-between gap-3">
-        {ratio ? (
-          <div className="flex flex-1 items-center gap-2">
-            <span className="num text-2xs text-buy">{ratio.buys} buy</span>
-            <div className="flex h-[3px] flex-1 overflow-hidden rounded-full bg-panel-3">
-              <span className="bg-buy/80" style={{ width: `${ratio.buyPct}%` }} />
-              <span className="bg-sell/80" style={{ width: `${100 - ratio.buyPct}%` }} />
-            </div>
-            <span className="num text-2xs text-sell">{ratio.sells} sell</span>
-          </div>
-        ) : (
-          <span className="text-2xs text-faint">Txns unavailable</span>
-        )}
-        <Badge tone="ghost" className="hidden sm:inline-flex">
-          {token.dexId ?? "dex"}
-        </Badge>
-      </div>
-      <div className="mt-2">
-        <SecurityBadges security={token.security} />
+      <div className="mt-2.5 flex items-center justify-between gap-3">
+        <div className="w-28">
+          <TxnCell token={token} timeframe={timeframe} />
+        </div>
+        {token.dexId ? <span className="truncate text-[10px] text-faint">{token.dexId}</span> : null}
+        <SecurityBadges security={token.security} compact />
       </div>
     </article>
   );

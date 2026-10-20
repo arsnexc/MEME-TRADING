@@ -10,7 +10,7 @@ MEMESCOPE is a Next.js app that pairs **real, provider-sourced memecoin market d
 
 | Area | What it does |
 | --- | --- |
-| **Discover** | Cross-chain scanner (Solana, Ethereum, Base) with trending / top-volume / newest-pool tabs, search, network filters, liquidity filter, sorting, pagination, saved trackers. |
+| **Discover** | Cross-chain screener (Solana, Ethereum, Base) with trending / top-volume / newest-pool tabs. One fixed-column table carries pair + chain badge, price, change, pool age, market cap (FDV-labelled), liquidity, window volume, buy/sell transaction bars, provider security flags and a paper **Buy** action; every numeric column sorts, with search, network/timeframe filters, a liquidity filter, pagination and saved trackers. |
 | **Terminal** | `/terminal?network=…&pool=…&token=…` — token header with live metrics and security hints, real OHLCV candlestick chart, market trades, top-trader and early-buyer aggregates derived from the fetched trade window, positions, limit orders, local callouts, and a full paper order ticket. |
 | **Paper execution** | Market buys/sells, resting limit orders monitored in the background, optional take-profit / stop-loss bracket on any buy, advanced fee/priority-fee simulation, fee-aware previews, validation, per-quote accounts. |
 | **Portfolio** | `/portfolio` — SOL and ETH accounts shown separately, total value broken into cash vs. positions, realized/open PnL, open positions with editable auto-exits, limit orders, fill history, JSON export, guarded reset. |
@@ -191,6 +191,7 @@ The suite runs in Node/jsdom with mocked upstream responses:
 - **`tests/rate-limit.test.ts`** — local window exhaustion, cooldown after an upstream 429, cached responses not consuming budget, batched multi-pool quote refresh (one GeckoTerminal call for many pools), and SOL/ETH reference prices derived from DEX Screener instead of GeckoTerminal.
 - **`tests/ui.test.tsx`** — positions table (live vs stale sell blocking), order cancellation, callout limits and local save.
 - **`tests/execution.test.tsx`** — full market-buy flow through the order ticket, stale-price blocking, balance validation, limit placement, sell-without-position messaging.
+- **`tests/discovery.test.tsx`** — screener table: the ten column headers and compact row readouts, transaction split counts, provider-only security icons (unknown never rendered as safe), price/age/txns sorting and `aria-sort`, negative-change colouring, and last-place handling for a missing transaction window.
 - **`tests/position-progress.test.ts`** — progress-bar geometry: marker order, price travel toward the target, clamping past a level, missing or mis-sided levels, and PnL net of the exit fee.
 - **`tests/chart-bracket.test.tsx`** — on-chart TP/SL bracket: quote↔chart price conversion, default levels and toggles, side validation, dragging a level (including a refused drag below entry), the entry pill readouts, and the two-step close.
 - **`tests/position-bar.test.tsx`** — the bottom trade bar: readouts, two-step sell confirmation, add-to-position handoff, exit editor, "not set" states.

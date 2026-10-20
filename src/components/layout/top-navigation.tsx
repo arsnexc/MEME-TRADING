@@ -177,7 +177,13 @@ export function TopNavigation() {
 
           <Tooltip content="Every order is simulated. Deposits and withdrawals are disabled because no wallet can be connected.">
             <span tabIndex={0} className="hidden sm:inline-flex">
-              <Badge tone="warn">PAPER</Badge>
+              <Badge
+                tone="neutral"
+                className="gap-1 border-border bg-panel px-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-faint"
+              >
+                <span aria-hidden="true" className="h-1 w-1 rounded-full bg-buy" />
+                Paper
+              </Badge>
             </span>
           </Tooltip>
 

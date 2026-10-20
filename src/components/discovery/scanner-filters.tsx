@@ -4,10 +4,15 @@ import { Search, SlidersHorizontal } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Tooltip } from "@/components/ui/tooltip";
-import { SCANNER_TIMEFRAMES, type NetworkId, type ScannerTimeframe } from "@/lib/constants";
+import { SCANNER_TIMEFRAMES, type ScannerTimeframe } from "@/lib/constants";
 import type { NetworkFilter } from "@/lib/market-view";
 import { cn } from "@/lib/utils";
 
+/**
+ * Screener controls: chain and window on the left, text filter and the
+ * advanced drawer on the right. Every control is 28px tall so the row reads as
+ * one continuous strip rather than a pile of widgets.
+ */
 export function ScannerFilters({
   query,
   onQueryChange,
@@ -32,50 +37,62 @@ export function ScannerFilters({
   onToggleFilters: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-2.5 py-1.5">
-      <Segmented
-        label="Network filter"
-        value={network}
-        onChange={(value) => onNetworkChange(value as NetworkFilter)}
-        options={[
-          { value: "all", label: "All" },
-          { value: "solana" as NetworkId, label: "Solana" },
-          { value: "eth" as NetworkId, label: "Ethereum" },
-          { value: "base" as NetworkId, label: "Base" },
-        ]}
-      />
-      <Segmented
-        label="Timeframe"
-        value={timeframe}
-        onChange={(value) => onTimeframeChange(value as ScannerTimeframe)}
-        options={SCANNER_TIMEFRAMES.map((item) => ({ value: item.value, label: item.label }))}
-      />
-      <div className="relative min-w-[150px] flex-1 sm:max-w-[220px]">
-        <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-faint" />
-        <Input
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Filter loaded rows…"
-          aria-label="Filter loaded tokens"
-          className="h-7 bg-panel pl-7 text-2xs"
+    <div className="border-b border-border bg-bg">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <Segmented
+          label="Network filter"
+          value={network}
+          onChange={(value) => onNetworkChange(value as NetworkFilter)}
+          className="shrink-0 rounded-[4px]"
+          options={[
+            { value: "all", label: "All" },
+            { value: "solana", label: "Solana" },
+            { value: "eth", label: "Ethereum" },
+            { value: "base", label: "Base" },
+          ]}
         />
+
+        <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
+
+        <Segmented
+          label="Timeframe"
+          value={timeframe}
+          onChange={(value) => onTimeframeChange(value as ScannerTimeframe)}
+          className="shrink-0 rounded-[4px]"
+          options={SCANNER_TIMEFRAMES.map((item) => ({ value: item.value, label: item.label }))}
+        />
+
+        <div className="relative ml-auto w-full min-w-[180px] sm:w-[248px]">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-faint" />
+          <Input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Search token, symbol or address…"
+            aria-label="Filter loaded tokens"
+            className="h-7 rounded-[4px] border-border bg-panel pl-7 pr-2 text-[11px] placeholder:text-faint hover:border-border-strong focus:border-border-strong"
+          />
+        </div>
+
+        <Tooltip content="Minimum-liquidity filter. Unknown values are never replaced with estimates.">
+          <button
+            type="button"
+            onClick={onToggleFilters}
+            aria-expanded={showFilters}
+            className={cn(
+              "flex h-7 shrink-0 items-center gap-1.5 rounded-[4px] border px-2.5 text-[11px] font-medium transition-colors",
+              showFilters
+                ? "border-info/50 bg-info/10 text-fg"
+                : "border-border bg-panel text-muted hover:border-border-strong hover:text-fg",
+            )}
+          >
+            <SlidersHorizontal className="h-3 w-3" /> Filters
+          </button>
+        </Tooltip>
       </div>
-      <Tooltip content="Additional filters. Unknown values are never replaced with estimates.">
-        <button
-          type="button"
-          onClick={onToggleFilters}
-          aria-expanded={showFilters}
-          className={cn(
-            "flex h-7 items-center gap-1 rounded-sm border px-2 text-2xs transition-colors",
-            showFilters ? "border-accent/40 bg-accent/10 text-fg" : "border-border bg-panel text-muted hover:text-fg",
-          )}
-        >
-          <SlidersHorizontal className="h-3 w-3" /> Filters
-        </button>
-      </Tooltip>
+
       {showFilters ? (
-        <div className="flex w-full flex-wrap items-center gap-1.5 border-t border-border/60 pt-1.5">
-          <span className="text-2xs text-faint">Min liquidity</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-[#1c1c1c] px-3 py-2">
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-faint">Min liquidity</span>
           <Segmented
             size="xs"
             label="Minimum liquidity"
@@ -88,9 +105,7 @@ export function ScannerFilters({
               { value: "250000", label: "$250K" },
             ]}
           />
-          <span className="ml-1 text-2xs text-faint">
-            Applied to loaded rows only · sorting covers the current provider page
-          </span>
+          <span className="text-[10px] text-faint">Applied to the loaded provider page only.</span>
         </div>
       ) : null}
     </div>

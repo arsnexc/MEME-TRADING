@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
-  Database,
   Info,
   Megaphone,
   Radio,
@@ -24,7 +23,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
 import { RetryCountdown } from "@/components/ui/retry-countdown";
-import { StartHere } from "@/components/layout/start-here";
 import { useNow } from "@/hooks/use-now";
 import { usePollingQuery } from "@/hooks/use-polling-query";
 import {
@@ -155,58 +153,88 @@ export function DiscoveryView() {
   const showDataState = fetchEnabled;
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border px-2.5 pb-2 pt-2.5 sm:px-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold tracking-tight">Discover</h1>
-            <Badge tone="warn">PAPER EXECUTION</Badge>
-            <span className="hidden items-center gap-1 text-2xs text-faint sm:flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-buy live-dot" /> live market data
-            </span>
+    <div className="flex flex-1 flex-col bg-bg">
+      <header className="border-b border-border px-3 pb-3 pt-3.5">
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.015em] text-fg">Discover</h1>
+              <Badge
+                tone="green"
+                className="gap-1 border-buy/25 bg-buy/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-buy"
+              >
+                <span aria-hidden="true" className="h-1 w-1 rounded-full bg-buy" />
+                Paper execution
+              </Badge>
+            </div>
+            <p className="mt-1 max-w-[660px] text-xs leading-5 text-muted">
+              Live on-chain pools across Solana, Ethereum and Base. Orders are simulated in separate SOL and ETH paper
+              accounts — no wallet, no signatures.
+            </p>
           </div>
-          <p className="mt-0.5 text-2xs text-muted">
-            On-chain pool scanner across Solana, Ethereum and Base. Orders are simulated in dedicated SOL and ETH
-            paper accounts.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Tooltip content={transportNote}>
-            <Badge tone="neutral" className="gap-1">
-              <Database className="h-2.5 w-2.5" />
-              GeckoTerminal · DEX Screener
-            </Badge>
-          </Tooltip>
-          {marketQuery.transport === "direct" ? (
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="flex items-center gap-1.5 text-[11px] text-faint">
+              <a
+                href="https://www.geckoterminal.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-fg"
+              >
+                GeckoTerminal
+              </a>
+              <span aria-hidden="true" className="text-border-strong">·</span>
+              <a
+                href="https://dexscreener.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-fg"
+              >
+                DEX Screener
+              </a>
+            </div>
+            {marketQuery.transport === "direct" ? (
+              <Tooltip content={transportNote}>
+                <Badge tone="warn">direct</Badge>
+              </Tooltip>
+            ) : null}
+            {marketQuery.data?.stale ? (
+              <Tooltip content="At least one network list was served from the server cache after a failed refresh. Rows may be older than the poll interval.">
+                <Badge tone="warn">cached</Badge>
+              </Tooltip>
+            ) : null}
+            <span aria-hidden="true" className="hidden h-3 w-px bg-border sm:block" />
             <Tooltip content={transportNote}>
-              <Badge tone="warn">direct</Badge>
+              <span className="flex items-center gap-1.5 text-[11px] text-faint" tabIndex={0}>
+                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-buy live-dot" />
+                <span className="num">
+                  {marketQuery.lastUpdated
+                    ? `Updated ${formatRelativeTime(marketQuery.lastUpdated, now)}`
+                    : "Loading market data…"}
+                </span>
+              </span>
             </Tooltip>
-          ) : null}
-          {marketQuery.data?.stale ? (
-            <Tooltip content="At least one network list was served from the server cache after a failed refresh. Rows may be older than the poll interval.">
-              <Badge tone="warn">cached snapshot</Badge>
-            </Tooltip>
-          ) : null}
-          <span className="num text-2xs text-faint">
-            {marketQuery.lastUpdated ? `Updated ${formatRelativeTime(marketQuery.lastUpdated, now)}` : "Loading market data…"}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => marketQuery.refresh()}
-            aria-label="Refresh market data"
-            disabled={marketQuery.fetching}
-          >
-            {marketQuery.fetching ? <Spinner /> : <RefreshCw className="h-3 w-3" />}
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 rounded-[4px] border-border px-2.5 text-[11px] font-medium text-muted hover:text-fg"
+              onClick={() => marketQuery.refresh()}
+              aria-label="Refresh market data"
+              disabled={marketQuery.fetching}
+            >
+              {marketQuery.fetching ? <Spinner /> : <RefreshCw className="h-3 w-3" />}
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <StartHere />
-
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-border px-2.5 panel-scroll" role="tablist" aria-label="Discovery sections">
-        {DISCOVERY_TABS.map((item) => {
+      <div
+        className="flex items-center gap-0.5 overflow-x-auto border-b border-border px-3 panel-scroll"
+        role="tablist"
+        aria-label="Discovery sections"
+      >
+        {DISCOVERY_TABS.map((item, index) => {
           const active = tab === item.value;
           return (
             <button
@@ -218,30 +246,39 @@ export function DiscoveryView() {
               onClick={() => setTab(item.value)}
               title={TAB_HINTS[item.value]}
               className={cn(
-                "relative flex h-8 shrink-0 items-center gap-1 px-2 text-xs font-medium transition-colors",
+                "relative flex h-10 shrink-0 items-center gap-1.5 px-3 text-xs font-medium transition-colors",
+                index === 0 && "pl-0",
                 active ? "text-fg" : "text-muted hover:text-fg",
               )}
             >
               {item.label}
               {item.badge ? (
-                <span className="rounded-[2px] border border-accent/40 bg-accent/10 px-1 py-px text-[8px] font-bold tracking-wide text-[#f5f5f5]">
+                <span className="rounded-[2px] border border-border-strong bg-panel-2 px-1 py-px text-[8px] font-semibold tracking-[0.06em] text-faint">
                   {item.badge}
                 </span>
               ) : null}
-              {item.value === "callouts" && hydrated ? (
-                <CalloutCount />
+              {item.value === "callouts" && hydrated ? <CalloutCount /> : null}
+              {active ? (
+                <span
+                  aria-hidden="true"
+                  className={cn("absolute bottom-0 h-[2px] bg-fg", index === 0 ? "left-0 right-3" : "inset-x-3")}
+                />
               ) : null}
-              {active ? <span className="absolute inset-x-1.5 bottom-0 h-[1.5px] bg-accent" /> : null}
             </button>
           );
         })}
-        <span className="ml-auto hidden shrink-0 items-center gap-1 pr-1 text-2xs text-faint lg:flex">
-          <Info className="h-2.5 w-2.5" />
-          {TAB_HINTS[tab]}
-        </span>
+        <Tooltip content={TAB_HINTS[tab]}>
+          <span
+            tabIndex={0}
+            aria-label="About this list"
+            className="ml-auto hidden shrink-0 pr-1 text-faint transition-colors hover:text-muted lg:inline-flex"
+          >
+            <Info className="h-3 w-3" />
+          </span>
+        </Tooltip>
       </div>
 
-      <div id="discovery-panel" role="tabpanel" className="flex min-h-0 flex-1 flex-col">
+      <div id="discovery-panel" role="tabpanel" className="flex min-h-0 flex-1 flex-col bg-bg">
         {showDataState ? (
           <>
             <ScannerFilters
@@ -260,7 +297,7 @@ export function DiscoveryView() {
             {marketQuery.error ? (
               <div
                 className={cn(
-                  "flex items-center gap-2 border-b px-3 py-1.5 text-2xs",
+                  "flex items-center gap-2 border-b px-3 py-1.5 text-[11px]",
                   marketQuery.errorStatus === 429
                     ? "border-warn/30 bg-warn/5 text-warn"
                     : "border-sell/30 bg-sell/5 text-sell",
@@ -299,10 +336,10 @@ export function DiscoveryView() {
 
             {marketQuery.loading && tokens.length === 0 ? (
               <div className="flex-1">
-                <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-2xs text-muted">
+                <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-[11px] text-muted">
                   <Spinner /> Loading live pools…
                 </div>
-                <TableSkeleton rows={10} cols={7} />
+                <TableSkeleton rows={10} cols={9} />
               </div>
             ) : marketQuery.error && tokens.length === 0 ? (
               <EmptyState
@@ -365,10 +402,10 @@ export function DiscoveryView() {
                   watched={watched}
                   onToggleWatch={onToggleWatch}
                 />
-                <div className="hidden border-t border-border px-3 py-1.5 text-2xs text-faint md:block">
-                  Mcap marked <span className="text-muted">FDV*</span> uses fully-diluted valuation (circulating supply
-                  unavailable). “Top” is the curated trending set re-ranked by 24h volume. Security: LP lock is
-                  provider-reported; authorities and holder concentration are unknown. Not an audit.
+                <div className="hidden border-t border-[#1c1c1c] px-3 py-1.5 text-[10px] leading-4 text-faint md:block">
+                  Mcap marked <span className="text-muted">FDV*</span> uses fully-diluted valuation when circulating supply
+                  is unavailable. “Top volume” is the curated trending set re-ranked by 24h volume. Security flags are
+                  provider metadata (LP lock only), not an audit. Simulated orders only.
                 </div>
               </>
             )}

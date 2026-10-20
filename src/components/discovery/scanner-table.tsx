@@ -8,6 +8,9 @@ import type { ScannerTimeframe } from "@/lib/constants";
 import type { SortDirection, SortKey } from "@/stores/preferences";
 import { cn } from "@/lib/utils";
 
+const HEADER_CELL =
+  "h-8 border-b border-border bg-[#0f0f0f] px-2 text-[10px] font-medium uppercase tracking-[0.08em] text-faint";
+
 function SortHeader({
   label,
   sortKey,
@@ -15,6 +18,7 @@ function SortHeader({
   direction,
   onSort,
   align = "right",
+  suffix,
 }: {
   label: string;
   sortKey: SortKey;
@@ -22,6 +26,7 @@ function SortHeader({
   direction: SortDirection;
   onSort: (key: SortKey) => void;
   align?: "left" | "right";
+  suffix?: React.ReactNode;
 }) {
   const active = sortKey === activeKey;
   const Icon = !active ? ArrowUpDown : direction === "asc" ? ArrowUp : ArrowDown;
@@ -29,15 +34,23 @@ function SortHeader({
     <button
       type="button"
       onClick={() => onSort(sortKey)}
-      aria-label={`Sort by ${label}${active ? `, currently ${direction}ending` : ""}`}
+      aria-label={`Sort by ${label}${active ? `, currently ${direction === "asc" ? "ascending" : "descending"}` : ""}`}
       className={cn(
-        "inline-flex items-center gap-1 text-2xs font-medium uppercase tracking-wide transition-colors",
-        active ? "text-fg" : "text-faint hover:text-muted",
-        align === "right" && "justify-end",
+        "group/th inline-flex w-full items-center gap-1 transition-colors hover:text-muted",
+        align === "right" ? "justify-end text-right" : "justify-start text-left",
+        active && "text-fg",
       )}
     >
-      {label}
-      <Icon className="h-2.5 w-2.5" />
+      <span className="inline-flex items-baseline gap-1">
+        {label}
+        {suffix}
+      </span>
+      <Icon
+        className={cn(
+          "h-2.5 w-2.5 shrink-0",
+          active ? "text-fg" : "opacity-0 transition-opacity group-hover/th:opacity-70",
+        )}
+      />
     </button>
   );
 }
@@ -61,37 +74,77 @@ export function ScannerTable({
   watched: Set<string>;
   onToggleWatch: (token: MarketToken) => void;
 }) {
+  const ariaSort = (key: SortKey) =>
+    sortKey === key ? (sortDirection === "asc" ? ("ascending" as const) : ("descending" as const)) : ("none" as const);
+
   return (
     <>
       <div className="hidden overflow-x-auto panel-scroll md:block">
-        <table className="w-full min-w-[1120px] border-separate border-spacing-0" aria-label="Token scanner">
-          <thead className="sticky top-0 z-10 bg-panel">
-            <tr className="border-b border-border text-2xs text-faint">
-              <th className="border-b border-border py-1.5 pl-2.5 pr-2 text-left font-medium">Token / pair</th>
-              <th className="border-b border-border px-2 py-1.5 text-right font-medium">Price</th>
-              <th className="border-b border-border px-2 py-1.5 text-right font-medium">
-                <SortHeader label="Change" sortKey="change" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+        <table className="w-full min-w-[1080px] table-fixed border-separate border-spacing-0" aria-label="Token scanner">
+          <colgroup>
+            <col />
+            <col className="w-[94px]" />
+            <col className="w-[80px]" />
+            <col className="w-[64px]" />
+            <col className="w-[92px]" />
+            <col className="w-[92px]" />
+            <col className="w-[98px]" />
+            <col className="w-[106px]" />
+            <col className="w-[84px]" />
+            <col className="w-[82px]" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col" className={cn(HEADER_CELL, "pl-3 pr-3 text-left")}>
+                Token / pair
               </th>
-              <th className="border-b border-border px-2 py-1.5 text-right font-medium">Age</th>
-              <th className="border-b border-border px-2 py-1.5 text-right font-medium">
+              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("price")}>
+                <SortHeader label="Price" sortKey="price" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+              </th>
+              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("change")}>
+                <SortHeader label="Change %" sortKey="change" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+              </th>
+              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("age")}>
+                <SortHeader label="Age" sortKey="age" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+              </th>
+              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("marketCap")}>
                 <SortHeader label="Mkt cap" sortKey="marketCap" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
               </th>
-              <th className="border-b border-border px-2 py-1.5 text-right font-medium">
+              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("liquidity")}>
                 <SortHeader label="Liquidity" sortKey="liquidity" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
               </th>
-              <th className="border-b border-border px-2 py-1.5 text-right font-medium">
-                <SortHeader label="Volume" sortKey="volume" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+              <th scope="col" className={cn(HEADER_CELL, "text-right")} aria-sort={ariaSort("volume")}>
+                <SortHeader
+                  label="Volume"
+                  sortKey="volume"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={onSort}
+                  suffix={<span className="text-[9px] font-normal tracking-normal text-faint/70">{timeframe.toUpperCase()}</span>}
+                />
               </th>
-              <th className="border-b border-border px-2 py-1.5 text-left font-medium">Txns</th>
-              <th className="border-b border-border px-2 py-1.5 text-left font-medium">
+              <th scope="col" className={cn(HEADER_CELL, "text-left")} aria-sort={ariaSort("txns")}>
+                <SortHeader
+                  label="Txns"
+                  align="left"
+                  sortKey="txns"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={onSort}
+                  suffix={<Info className="h-2.5 w-2.5 text-faint/60" aria-hidden="true" />}
+                />
+              </th>
+              <th scope="col" className={cn(HEADER_CELL, "text-left")}>
                 <span className="inline-flex items-center gap-1">
                   Security
-                  <Tooltip content="Provider-reported LP lock only. Mint/freeze authority and holder concentration are unavailable — unknown, never 'safe'.">
-                    <Info className="h-2.5 w-2.5 cursor-help text-faint" />
+                  <Tooltip content="Provider-reported LP lock only. Mint/freeze authority and holder concentration are unavailable — shown as unknown, never as safe.">
+                    <Info className="h-2.5 w-2.5 cursor-help text-faint/70" aria-hidden="true" />
                   </Tooltip>
                 </span>
               </th>
-              <th className="border-b border-border px-2.5 py-1.5 text-right font-medium">Action</th>
+              <th scope="col" className={cn(HEADER_CELL, "pl-2 pr-3 text-right")}>
+                Action
+              </th>
             </tr>
           </thead>
           <tbody>
