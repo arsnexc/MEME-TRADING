@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Info } from "lucide-react";
 import { TokenCard, TokenRow } from "./token-row";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { MarketToken } from "@/lib/market-data/types";
-import type { ScannerTimeframe } from "@/lib/constants";
+import { scannerTimeframeLabel, type ScannerTimeframe } from "@/lib/constants";
 import type { SortDirection, SortKey } from "@/stores/preferences";
 import { cn } from "@/lib/utils";
 
@@ -120,7 +120,7 @@ export function ScannerTable({
                   activeKey={sortKey}
                   direction={sortDirection}
                   onSort={onSort}
-                  suffix={<span className="text-[9px] font-normal tracking-normal text-faint/70">{timeframe.toUpperCase()}</span>}
+                  suffix={<span className="text-[9px] font-normal tracking-normal text-faint/70">{scannerTimeframeLabel(timeframe).toUpperCase()}</span>}
                 />
               </th>
               <th scope="col" className={cn(HEADER_CELL, "text-left")} aria-sort={ariaSort("txns")}>

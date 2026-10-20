@@ -13,7 +13,7 @@ import { aggregateTransactions } from "@/lib/market-view";
 import { formatAge, formatPercent, formatTimestamp } from "@/lib/formatting";
 import type { MarketToken } from "@/lib/market-data/types";
 import type { ScannerTimeframe } from "@/lib/constants";
-import { NETWORKS } from "@/lib/constants";
+import { NETWORKS, scannerTimeframeLabel } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 const COUNT_FORMAT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
@@ -116,14 +116,14 @@ export function TxnCell({ token, timeframe }: { token: MarketToken; timeframe: S
   const ratio = transactionRatio(token, timeframe);
   if (!ratio) {
     return (
-      <Tooltip content={`Buy/sell counts are unavailable for this pool on the ${timeframe} window.`}>
+      <Tooltip content={`Buy/sell counts are unavailable for this pool on the ${scannerTimeframeLabel(timeframe)} window.`}>
         <span className="num text-[11px] text-faint">—</span>
       </Tooltip>
     );
   }
   return (
     <Tooltip
-      content={`${ratio.buys.toLocaleString()} buys · ${ratio.sells.toLocaleString()} sells in the ${timeframe} window (GeckoTerminal). Not an order book.`}
+      content={`${ratio.buys.toLocaleString()} buys · ${ratio.sells.toLocaleString()} sells in the ${scannerTimeframeLabel(timeframe)} window (GeckoTerminal). Not an order book.`}
     >
       <div className="w-full">
         <div className="flex items-baseline justify-between gap-1 text-[10px] leading-none">
@@ -229,7 +229,7 @@ export function TokenRow({
       </td>
       <td className={cn(numeric, "text-[12px] text-fg")}>{formatMoney(token.liquidityUsd, { compact: true })}</td>
       <td className={cn(numeric, "text-[12px] text-fg")}>
-        <Tooltip content={`${timeframe.toUpperCase()} traded volume across this pool (GeckoTerminal).`}>
+        <Tooltip content={`${scannerTimeframeLabel(timeframe)} traded volume across this pool (GeckoTerminal).`}>
           <span className="num">{formatMoney(token.volumeUsd[timeframe], { compact: true })}</span>
         </Tooltip>
       </td>
@@ -280,7 +280,7 @@ export function TokenCard({
           <div className="num text-sm font-semibold text-fg">{formatPrice(token.priceUsd)}</div>
           <div className="mt-1 flex items-center gap-1.5 text-[11px]">
             <ChangeValue value={token.changePct[timeframe]} />
-            <span className="text-faint">· {timeframe.toUpperCase()}</span>
+            <span className="text-faint">· {scannerTimeframeLabel(timeframe)}</span>
             <span className="text-faint">· {formatAge(token.poolCreatedAt)} old</span>
           </div>
         </div>
@@ -296,7 +296,7 @@ export function TokenCard({
           <dd className="num mt-0.5 text-[11px] text-fg">{formatMoney(token.liquidityUsd, { compact: true })}</dd>
         </div>
         <div>
-          <dt className="text-faint">{timeframe.toUpperCase()} volume</dt>
+          <dt className="text-faint">{scannerTimeframeLabel(timeframe)} volume</dt>
           <dd className="num mt-0.5 text-[11px] text-fg">{formatMoney(token.volumeUsd[timeframe], { compact: true })}</dd>
         </div>
       </dl>

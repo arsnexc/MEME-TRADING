@@ -87,6 +87,11 @@ export const SCANNER_TIMEFRAMES: { value: ScannerTimeframe; label: string }[] = 
   { value: "h24", label: "24h" },
 ];
 
+/** "h24" is a storage key; the UI always shows "24h". */
+export function scannerTimeframeLabel(value: ScannerTimeframe): string {
+  return SCANNER_TIMEFRAMES.find((item) => item.value === value)?.label ?? value;
+}
+
 export type ChartTimeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 export const CHART_TIMEFRAMES: { value: ChartTimeframe; label: string }[] = [
   { value: "1m", label: "1m" },
