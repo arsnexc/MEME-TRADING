@@ -242,9 +242,22 @@ export function DiscoveryView() {
       <header className="border-b border-border px-3 pb-3 pt-3.5">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div className="min-w-0">
-            <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.025em] text-fg">
-              {TAB_HEADINGS[tab].title}
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.025em] text-fg">
+                {TAB_HEADINGS[tab].title}
+              </h1>
+              {tab === "top" || tab === "trending" ? (
+                <Tooltip content="Universe: the trending pools GeckoTerminal publishes for Solana, Ethereum and Base, merged per token and ranked by market cap. Neither provider publishes a sector taxonomy, so stablecoins, DeFi and wrapped majors appear when they trade heavily. Nothing is classified or excluded by its ticker.">
+                  <span
+                    tabIndex={0}
+                    aria-label="About the ranked universe"
+                    className="mt-1 inline-flex text-faint transition-colors hover:text-muted"
+                  >
+                    <Info className="h-3 w-3" />
+                  </span>
+                </Tooltip>
+              ) : null}
+            </div>
             <p className="mt-1 max-w-[760px] text-xs leading-5 text-muted">
               {TAB_HEADINGS[tab].blurb}
               {showDataState ? (
@@ -510,8 +523,10 @@ export function DiscoveryView() {
                   trade counts are summed, and price and change follow its deepest pool. Rank is the market-cap
                   position in the loaded universe and does not change when you sort. Market cap marked{" "}
                   <span className="text-muted">FDV*</span> uses fully-diluted valuation when circulating supply is
-                  unavailable. “Traders” counts wallet participation, not holders — the pool APIs publish no holder
-                  data. Security flags live on the token page. Simulated orders only.
+                  unavailable. The providers publish no sector taxonomy, so this ranking includes every token their
+                  trending feeds return — stablecoins, DeFi and wrapped majors included when they trade heavily; nothing
+                  is classified by ticker. “Traders” counts wallet participation, not holders — the pool APIs publish no
+                  holder data. Security flags live on the token page. Simulated orders only.
                 </div>
               </>
             ) : null}

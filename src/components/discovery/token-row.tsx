@@ -184,7 +184,7 @@ export function TokenIdentity({
             <span className="hidden truncate text-[10px] text-faint xl:inline">{token.dexId}</span>
           ) : null}
         </div>
-        <div className="mt-[3px] flex min-w-0 items-center gap-1.5 text-[10px] leading-none">
+        <div className="mt-[3px] flex min-w-0 items-center gap-1.5 overflow-hidden text-[10px] leading-none">
           <span className="max-w-[190px] truncate text-muted">{token.name}</span>
           {pools > 1 ? (
             <Tooltip
