@@ -31,6 +31,10 @@ export function MarketBreadth({
   const window = scannerTimeframeLabel(timeframe);
   const decided = stats.advancing + stats.declining;
   const upShare = decided === 0 ? 0 : (stats.advancing / decided) * 100;
+  const partialNote = (missing: number, noun: string) =>
+    missing > 0
+      ? ` ${missing} of the ${stats.count} tokens publish no ${noun}, so this total excludes them.`
+      : "";
   const unknownNote =
     stats.unknown > 0
       ? ` ${stats.unknown} ${stats.unknown === 1 ? "token has" : "tokens have"} no published ${window} change and ${stats.unknown === 1 ? "is" : "are"} excluded from the split.`
@@ -81,22 +85,50 @@ export function MarketBreadth({
       <Stat
         label="Market cap"
         tooltip={`Sum of the reported market caps of the ${stats.count} tokens in view. Tokens without a published market cap are excluded rather than counted as zero.`}
-        value={formatMoney(stats.totalMarketCap, { compact: true })}
+        value={
+          <>
+            {formatMoney(stats.totalMarketCap, { compact: true })}
+            {stats.partial.marketCap > 0 ? <Dagger /> : null}
+          </>
+        }
+        note={partialNote(stats.partial.marketCap, "market cap")}
       />
       <Stat
         label={`Volume ${window}`}
         tooltip={`Sum of the ${window} volume of every token in view, across all of its pools in this snapshot.`}
-        value={formatMoney(stats.totalVolume, { compact: true })}
+        value={
+          <>
+            {formatMoney(stats.totalVolume, { compact: true })}
+            {stats.partial.volume > 0 ? <Dagger /> : null}
+          </>
+        }
+        note={partialNote(stats.partial.volume, `${window} volume`)}
       />
       <Stat
         label="Liquidity"
         tooltip="Sum of the reported pool liquidity of the tokens in view."
-        value={formatMoney(stats.totalLiquidity, { compact: true })}
+        value={
+          <>
+            {formatMoney(stats.totalLiquidity, { compact: true })}
+            {stats.partial.liquidity > 0 ? <Dagger /> : null}
+          </>
+        }
+        note={partialNote(stats.partial.liquidity, "liquidity")}
       />
       <Stat
         label={`Traders ${window}`}
         tooltip={`Buyers + sellers summed over every pool in view. Wallet participation, not holders, and a wallet that traded in two pools of the same token is counted twice.${unknownNote}`}
-        value={stats.totalTraders == null ? <span className="text-faint">—</span> : COMPACT.format(stats.totalTraders)}
+        value={
+          stats.totalTraders == null ? (
+            <span className="text-faint">—</span>
+          ) : (
+            <>
+              {COMPACT.format(stats.totalTraders)}
+              {stats.partial.traders > 0 ? <Dagger /> : null}
+            </>
+          )
+        }
+        note={partialNote(stats.partial.traders, "wallet count")}
       />
       <Stat
         label="Pools"
@@ -125,19 +157,30 @@ export function MarketBreadth({
   );
 }
 
+/** Marks a total that excludes rows with no published value. */
+function Dagger() {
+  return (
+    <span aria-hidden="true" className="ml-0.5 align-super text-[8px] text-faint">
+      †
+    </span>
+  );
+}
+
 function Stat({
   label,
   value,
   tooltip,
+  note,
   className,
 }: {
   label: string;
   value: React.ReactNode;
   tooltip: string;
+  note?: string;
   className?: string;
 }) {
   return (
-    <Tooltip content={tooltip}>
+    <Tooltip content={note ? `${tooltip}${note}` : tooltip}>
       <div className={cn("min-w-[86px] shrink-0 border-l border-[#1f1f1f] px-3 py-1.5", className)}>
         <p className={LABEL}>{label}</p>
         <p className={VALUE}>{value}</p>

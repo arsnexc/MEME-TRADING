@@ -307,6 +307,11 @@ export interface ScreenerStats {
   totalTraders: number | null;
   /** Total pools folded into the visible rows. */
   poolCount: number;
+  /**
+   * Rows that publish nothing for a metric. A total that excludes any row is
+   * marked in the UI, because a silently short sum is still a wrong number.
+   */
+  partial: { marketCap: number; volume: number; liquidity: number; traders: number };
   best: { symbol: string; change: number } | null;
   worst: { symbol: string; change: number } | null;
 }
@@ -348,6 +353,12 @@ export function screenerStats(rows: MarketToken[], timeframe: ScannerTimeframe):
     totalLiquidity: sumKnown(rows.map((row) => row.liquidityUsd)),
     totalTraders: sumKnown(rows.map((row) => traderCount(row, timeframe))),
     poolCount: rows.reduce((total, row) => total + ((row as Partial<ScreenerRow>).poolCount ?? 1), 0),
+    partial: {
+      marketCap: rows.filter((row) => row.marketCapUsd == null).length,
+      volume: rows.filter((row) => row.volumeUsd[timeframe] == null).length,
+      liquidity: rows.filter((row) => row.liquidityUsd == null).length,
+      traders: rows.filter((row) => traderCount(row, timeframe) == null).length,
+    },
     best,
     worst,
   };

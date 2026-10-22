@@ -350,6 +350,21 @@ describe("market breadth", () => {
     expect(screenerStats([unknown], "h24").totalTraders).toBe(11_500);
   });
 
+  it("flags totals that exclude rows with no published value", () => {
+    const noCap = token({ id: "solana:nocap", symbol: "NOCAP", tokenAddress: "nocap", marketCapUsd: null });
+    const noTraders = token({
+      id: "solana:quiet",
+      symbol: "QUIET",
+      tokenAddress: "quiet",
+      txns: { h24: { buys: 3, sells: 1 } },
+    });
+    const stats = screenerStats([up, noCap, noTraders], "h24");
+    expect(stats.partial.marketCap).toBe(1);
+    expect(stats.partial.traders).toBe(1);
+    // The total is the sum of what was published, never a zero-fill.
+    expect(stats.totalMarketCap).toBe((up.marketCapUsd ?? 0) + (noTraders.marketCapUsd ?? 0));
+  });
+
   it("filters by volume floor, tracked-only and pool address", () => {
     const quiet = token({
       id: "solana:quiet",

@@ -22,6 +22,8 @@ vi.mock("@/lib/market-data/client", () => ({
 
 import { fetchMarketsClient } from "@/lib/market-data/client";
 import { DiscoveryView } from "@/components/discovery/discovery-view";
+import { MarketBreadth } from "@/components/discovery/market-breadth";
+import { screenerStats } from "@/lib/market-view";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useHydrationStore } from "@/stores/hydration";
 import { useMarketStore } from "@/stores/market";
@@ -130,6 +132,22 @@ describe("discovery page", () => {
     // Both fixture tokens are up 15.33% on the 24h window.
     expect(within(breadth).getByRole("img", { name: "2 advancing, 0 declining" })).toBeInTheDocument();
     expect(within(breadth).getByText(/top mover/i)).toBeInTheDocument();
+  });
+
+  it("marks a breadth total that had to exclude an unpublished row", () => {
+    const missing = token({
+      id: "solana:missing",
+      symbol: "MISS",
+      tokenAddress: "missing",
+      marketCapUsd: null,
+    });
+    render(
+      <TooltipProvider>
+        <MarketBreadth stats={screenerStats([SMALL, missing], "h24")} timeframe="h24" />
+      </TooltipProvider>,
+    );
+    expect(screen.getByText("Market cap")).toBeInTheDocument();
+    expect(screen.getAllByText("†").length).toBeGreaterThan(0);
   });
 
   it("hides a column from the display menu and keeps the rest aligned", async () => {
