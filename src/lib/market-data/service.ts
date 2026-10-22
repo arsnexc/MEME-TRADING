@@ -171,18 +171,36 @@ export async function fetchMarkets(params: {
   const warnings: string[] = [];
   let stale = false;
 
-  const results = await Promise.allSettled(networks.map((network) => gtPools(network, kind, page)));
-  const pools: { network: NetworkId; pool: NonNullable<Awaited<ReturnType<typeof gtPools>>["value"]>[number] }[] = [];
+  // "top" feeds a 100-token ranking, so it reads two provider pages per network
+  // to fill the universe. Every other tab stays on one page: the new-pools feed
+  // is about freshness, not depth, and a second page would triple its cost.
+  const pageNumbers = tab === "top" ? [1, 2] : [page];
+  const requests = networks.flatMap((network) => pageNumbers.map((pageNumber) => ({ network, pageNumber })));
+  const results = await Promise.allSettled(
+    requests.map(({ network, pageNumber }) => gtPools(network, kind, pageNumber)),
+  );
+
+  type GtPoolItem = Awaited<ReturnType<typeof gtPools>>["value"][number];
+  const pools: { network: NetworkId; pool: GtPoolItem }[] = [];
+  const seenPools = new Set<string>();
 
   results.forEach((result, index) => {
-    const network = networks[index];
+    const { network, pageNumber } = requests[index];
     if (result.status === "fulfilled") {
       if (result.value.stale) stale = true;
       for (const pool of result.value.value) {
-        if (pool?.attributes?.address) pools.push({ network, pool });
+        if (!pool?.attributes?.address) continue;
+        const key = `${network}:${pool.attributes.address}`;
+        if (seenPools.has(key)) continue;
+        seenPools.add(key);
+        pools.push({ network, pool });
       }
-    } else {
+    } else if (pageNumber === 1) {
       warnings.push(`${NETWORKS[network].label} market data unavailable: ${errorMessage(result.reason)}`);
+    } else {
+      warnings.push(
+        `${NETWORKS[network].label} ranking page ${pageNumber} unavailable, so the universe is shallower: ${errorMessage(result.reason)}`,
+      );
     }
   });
 
@@ -207,17 +225,36 @@ export async function fetchMarkets(params: {
         .map((p) => p.pool.relationships?.base_token?.data?.id?.split("_").slice(1).join("_") ?? "")
         .filter(Boolean);
       // Batch the wrapped native token with the page so SOL/ETH reference prices
-      // do not need their own GeckoTerminal request. 30 addresses max.
+      // do not need their own GeckoTerminal request. DEX Screener accepts 30
+      // addresses per call, so a deeper universe is read in 30-address batches
+      // instead of silently dropping logos and market caps past the first 30.
       const quoteAddress = quoteAddressFor(network);
-      const addresses = (quoteAddress ? [quoteAddress, ...baseAddresses] : baseAddresses).slice(0, 30);
-      try {
-        const result = await dsTokenPairs(network, addresses);
-        if (result.stale) stale = true;
-        dsByNetwork.set(network, result.pairs);
-      } catch (error) {
-        warnings.push(`${NETWORKS[network].label} logos/socials unavailable: ${errorMessage(error)}`);
-        dsByNetwork.set(network, []);
+      const addresses = quoteAddress ? [quoteAddress, ...baseAddresses] : baseAddresses;
+      const batches: string[][] = [];
+      for (let index = 0; index < addresses.length; index += 30) {
+        batches.push(addresses.slice(index, index + 30));
       }
+      if (batches.length === 0) {
+        dsByNetwork.set(network, []);
+        return;
+      }
+      const settled = await Promise.allSettled(batches.map((batch) => dsTokenPairs(network, batch)));
+      const pairs: DsPair[] = [];
+      let failed = 0;
+      for (const result of settled) {
+        if (result.status === "fulfilled") {
+          if (result.value.stale) stale = true;
+          pairs.push(...result.value.pairs);
+        } else {
+          failed += 1;
+        }
+      }
+      if (failed > 0) {
+        warnings.push(
+          `${NETWORKS[network].label} logos/socials unavailable for ${failed} of ${settled.length} batches; affected rows keep their provider figures but lose the logo.`,
+        );
+      }
+      dsByNetwork.set(network, pairs);
     }),
   );
 
@@ -236,7 +273,10 @@ export async function fetchMarkets(params: {
   }));
   warnings.push(...quote.warnings);
 
-  const tokens = sortTokens(dedupeTokens(normalized), tab).slice(0, 90);
+  // The screener merges pools per token and then takes the top 100 tokens, so
+  // the list is kept deep enough to fill that ranking after the merge (a token
+  // averages two pools) without shipping the entire provider page to the client.
+  const tokens = sortTokens(dedupeTokens(normalized), tab).slice(0, 220);
 
   return {
     tokens,

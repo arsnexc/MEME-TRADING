@@ -13,8 +13,14 @@ function renderFilters(overrides: Partial<React.ComponentProps<typeof ScannerFil
     onNetworkChange: () => undefined,
     minLiquidity: 0,
     onMinLiquidityChange: () => undefined,
+    minVolume: 0,
+    onMinVolumeChange: () => undefined,
+    watchedOnly: false,
+    onWatchedOnlyChange: () => undefined,
+    watchedCount: 0,
     showFilters: false,
     onToggleFilters: () => undefined,
+    onReset: () => undefined,
     ...overrides,
   };
   render(
@@ -59,6 +65,65 @@ describe("screener filters", () => {
       expect(screen.getByRole("menuitemradio", { name: label })).toBeDisabled();
     }
     expect(screen.getByText(/sector tags are not published/i)).toBeInTheDocument();
+  });
+
+  it("summarises active filters as removable chips", () => {
+    const onNetworkChange = vi.fn();
+    const onQueryChange = vi.fn();
+    const onMinLiquidityChange = vi.fn();
+    const onWatchedOnlyChange = vi.fn();
+    const onReset = vi.fn();
+    renderFilters({
+      network: "solana",
+      query: "bonk",
+      minLiquidity: 50_000,
+      watchedOnly: true,
+      watchedCount: 4,
+      onNetworkChange,
+      onQueryChange,
+      onMinLiquidityChange,
+      onWatchedOnlyChange,
+      onReset,
+    });
+
+    expect(screen.getByLabelText("Active filters")).toBeInTheDocument();
+    expect(screen.getByText("Network: Solana")).toBeInTheDocument();
+    expect(screen.getByText("Search: “bonk”")).toBeInTheDocument();
+    expect(screen.getByText("Liquidity ≥ $50K")).toBeInTheDocument();
+    expect(screen.getByText("Tracked only")).toBeInTheDocument();
+    expect(screen.getByText("4 tracked")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear network filter" }));
+    expect(onNetworkChange).toHaveBeenCalledWith("all");
+    fireEvent.click(screen.getByRole("button", { name: "Clear minimum liquidity" }));
+    expect(onMinLiquidityChange).toHaveBeenCalledWith(0);
+    fireEvent.click(screen.getByRole("button", { name: "Clear tracked-only filter" }));
+    expect(onWatchedOnlyChange).toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "Reset all" }));
+    expect(onReset).toHaveBeenCalled();
+    // The chips mirror state; they never mutate it directly.
+    expect(onQueryChange).not.toHaveBeenCalled();
+  });
+
+  it("offers the volume floor and tracked-only toggle in the drawer", () => {
+    const onMinVolumeChange = vi.fn();
+    const onWatchedOnlyChange = vi.fn();
+    renderFilters({ showFilters: true, minVolume: 0, onMinVolumeChange, onWatchedOnlyChange, watchedCount: 3 });
+
+    expect(screen.getByRole("group", { name: "Minimum 24h volume" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "$100K" }));
+    expect(onMinVolumeChange).toHaveBeenCalledWith(100_000);
+
+    fireEvent.click(screen.getByRole("button", { name: /tracked only/i }));
+    expect(onWatchedOnlyChange).toHaveBeenCalledWith(true);
+  });
+
+  it("focuses the search box when / is pressed", () => {
+    renderFilters();
+    const input = screen.getByLabelText("Filter loaded tokens");
+    expect(document.activeElement).not.toBe(input);
+    fireEvent.keyDown(window, { key: "/" });
+    expect(document.activeElement).toBe(input);
   });
 
   it("forwards the search box and the advanced drawer toggle", () => {

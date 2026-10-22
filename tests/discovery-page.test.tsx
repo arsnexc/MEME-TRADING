@@ -98,7 +98,7 @@ describe("discovery page", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Top 100 Meme Coins" })).toBeInTheDocument();
     // Ranks come from market cap, so BIG is #1 even though it is listed second.
     await waitFor(() => expect(screen.getByTestId("token-row-MEME")).toBeInTheDocument());
-    expect(screen.getByText(/2 pools loaded/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 coins ranked · 2 pools scanned/i)).toBeInTheDocument();
     expect(within(screen.getByTestId("token-row-BIG")).getByLabelText("Rank 1")).toBeInTheDocument();
     expect(within(screen.getByTestId("token-row-MEME")).getByLabelText("Rank 2")).toBeInTheDocument();
 
@@ -118,6 +118,41 @@ describe("discovery page", () => {
     expect(screen.getByTestId("token-row-MEME")).toBeInTheDocument();
     // The Solana pool keeps universe rank 2 instead of becoming #1.
     expect(within(screen.getByTestId("token-row-MEME")).getByLabelText("Rank 2")).toBeInTheDocument();
+  });
+
+  it("shows market breadth computed from the loaded rows", async () => {
+    render(<TooltipProvider>{<DiscoveryView />}</TooltipProvider>);
+    await waitFor(() => expect(screen.getByTestId("token-row-BIG")).toBeInTheDocument());
+
+    const breadth = screen.getByRole("group", { name: "Market breadth" });
+    expect(within(breadth).getByText("Breadth")).toBeInTheDocument();
+    expect(within(breadth).getByText(/median 24h/i)).toBeInTheDocument();
+    // Both fixture tokens are up 15.33% on the 24h window.
+    expect(within(breadth).getByRole("img", { name: "2 advancing, 0 declining" })).toBeInTheDocument();
+    expect(within(breadth).getByText(/top mover/i)).toBeInTheDocument();
+  });
+
+  it("hides a column from the display menu and keeps the rest aligned", async () => {
+    render(<TooltipProvider>{<DiscoveryView />}</TooltipProvider>);
+    await waitFor(() => expect(screen.getByTestId("token-row-BIG")).toBeInTheDocument());
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Screener display options" }), { button: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Screener display options" }));
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Liquidity" }));
+
+    const table = screen.getByRole("table", { name: "Token scanner" });
+    expect(within(table).queryByRole("columnheader", { name: /liquidity/i })).not.toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: /market cap/i })).toBeInTheDocument();
+  });
+
+  it("offers a tracked-only filter that explains an empty result", async () => {
+    render(<TooltipProvider>{<DiscoveryView />}</TooltipProvider>);
+    await waitFor(() => expect(screen.getByTestId("token-row-BIG")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /^Filters$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /tracked only/i }));
+    expect(await screen.findByText("No coins match these filters")).toBeInTheDocument();
+    expect(screen.queryByTestId("token-row-BIG")).not.toBeInTheDocument();
   });
 
   it("opens the terminal ticket from the Buy action", async () => {

@@ -202,6 +202,57 @@ describe("service with mocked providers", () => {
     expect(result.warnings).toHaveLength(0);
   });
 
+  it("reads a second provider page for the ranked tab so the universe can reach 100", async () => {
+    const pageTwo: GtPool = {
+      ...pool,
+      id: "solana_pool456",
+      attributes: {
+        ...pool.attributes,
+        address: "pool456",
+        name: "SECOND / SOL",
+        market_cap_usd: "250000",
+        volume_usd: { m5: "10", h24: "1000" },
+      },
+      relationships: {
+        ...pool.relationships,
+        base_token: { data: { id: "solana_token456" } },
+      },
+    };
+    const calls: string[] = [];
+    mockFetch((url) => {
+      calls.push(url);
+      if (url.includes("/networks/solana/trending_pools?page=2")) return { body: { data: [pageTwo] } };
+      if (url.includes("/networks/solana/trending_pools")) return { body: { data: [pool] } };
+      if (url.includes("/tokens/v1/solana/")) return { body: [pair] };
+      if (url.includes("/token_price/So111")) {
+        return { body: { data: { attributes: { token_prices: { So11111111111111111111111111111111111111112: "100" } } } } };
+      }
+      if (url.includes("/token_price/0xc02")) {
+        return { body: { data: { attributes: { token_prices: { "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "3000" } } } } };
+      }
+      throw new Error(`Unexpected upstream call: ${url}`);
+    });
+
+    const result = await fetchMarkets({ tab: "top", networks: ["solana"] });
+    expect(calls.some((url) => url.includes("page=2"))).toBe(true);
+    expect(result.tokens.map((token) => token.pool).sort()).toEqual(["pool123", "pool456"]);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it("keeps page one when only the second ranking page fails", async () => {
+    mockFetch((url) => {
+      if (url.includes("/networks/solana/trending_pools?page=2")) return { status: 502, body: { error: "boom" } };
+      if (url.includes("/networks/solana/trending_pools")) return { body: { data: [pool] } };
+      if (url.includes("/tokens/v1/solana/")) return { body: [pair] };
+      throw new Error(`Unexpected upstream call: ${url}`);
+    });
+
+    const result = await fetchMarkets({ tab: "top", networks: ["solana"] });
+    expect(result.tokens).toHaveLength(1);
+    // A shallow page 2 is a depth warning, not a data outage.
+    expect(result.warnings.join(" ")).toMatch(/ranking page 2 unavailable/i);
+  });
+
   it("degrades with warnings when DEX Screener fails", async () => {
     mockFetch((url) => {
       if (url.includes("/networks/solana/trending_pools")) return { body: { data: [pool] } };

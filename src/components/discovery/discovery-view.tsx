@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { ScannerFilters } from "./scanner-filters";
 import { ScannerTable } from "./scanner-table";
+import { MarketBreadth } from "./market-breadth";
+import { ScreenerMenu } from "./screener-menu";
 import { Pagination } from "./pagination";
 import { SavedCallouts } from "./saved-callouts";
 import { terminalHref } from "./token-row";
@@ -27,14 +29,23 @@ import { useNow } from "@/hooks/use-now";
 import { usePollingQuery } from "@/hooks/use-polling-query";
 import {
   DISCOVERY_TABS,
-  SCREENER_PAGE_SIZE,
   SCREENER_UNIVERSE_LIMIT,
   type DiscoveryTab,
   type ScannerTimeframe,
 } from "@/lib/constants";
+import { downloadCsv, screenerCsv } from "@/lib/csv";
 import { fetchMarketsClient } from "@/lib/market-data/client";
 import type { MarketToken } from "@/lib/market-data/types";
-import { filterAndSortTokens, paginate, rankByMarketCap, topByMarketCap, type NetworkFilter } from "@/lib/market-view";
+import {
+  aggregateByToken,
+  filterAndSortTokens,
+  paginate,
+  rankByMarketCap,
+  screenerStats,
+  tokenKey,
+  topByMarketCap,
+  type NetworkFilter,
+} from "@/lib/market-view";
 import { formatRelativeTime } from "@/lib/formatting";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/stores/hydration";
@@ -45,7 +56,7 @@ import { useCalloutStore } from "@/stores/callouts";
 import { toast } from "@/stores/toast";
 
 const TAB_HINTS: Partial<Record<DiscoveryTab, string>> = {
-  top: "The largest pools by market cap across the scanned networks, capped at 100. The public API exposes no all-market ranking.",
+  top: "The largest tokens by market cap across the scanned networks, capped at 100. Every pool of a token is merged into one row. The public API exposes no all-market ranking.",
   radar: "Brand-new pools from the provider's new-pools feed. Sort by Age to see the newest first. Extreme risk and usually no price history.",
   callouts: "Private notes saved in this browser only.",
   streamers: "No verified streamer feed is connected in this build.",
@@ -83,6 +94,8 @@ export function DiscoveryView() {
   const [network, setNetwork] = useState<NetworkFilter>("all");
   const [query, setQuery] = useState("");
   const [minLiquidity, setMinLiquidity] = useState(0);
+  const [minVolume, setMinVolume] = useState(0);
+  const [watchedOnly, setWatchedOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -91,6 +104,11 @@ export function DiscoveryView() {
   const sortDirection = usePreferencesStore((state) => state.sortDirection);
   const setSort = usePreferencesStore((state) => state.setSort);
   const setTimeframe = usePreferencesStore((state) => state.setScannerTimeframe);
+  const pageSize = usePreferencesStore((state) => state.screenerPageSize);
+  const setPageSize = usePreferencesStore((state) => state.setScreenerPageSize);
+  const hiddenColumns = usePreferencesStore((state) => state.hiddenColumns);
+  const toggleColumn = usePreferencesStore((state) => state.toggleColumn);
+  const resetColumns = usePreferencesStore((state) => state.resetColumns);
   const watchlist = useWatchlistStore((state) => state.entries);
   const toggleWatch = useWatchlistStore((state) => state.toggle);
   const upsertTokens = useMarketStore((state) => state.upsertTokens);
@@ -117,16 +135,26 @@ export function DiscoveryView() {
     persist: true,
   });
 
-  const tokens = useMemo(() => marketQuery.data?.tokens ?? [], [marketQuery.data]);
+  const pools = useMemo(() => marketQuery.data?.tokens ?? [], [marketQuery.data]);
   const warnings = marketQuery.data?.warnings ?? [];
-  // A market-cap ranking is only meaningful over the largest pools, and the
+
+  /**
+   * One row per token, not per pool.
+   *
+   * The providers return pools, and a memecoin routinely trades in three of
+   * them. Merging is what makes "Top 100 coins" literally true and stops the
+   * same coin appearing twice with its volume split in half.
+   */
+  const tokens = useMemo(() => aggregateByToken(pools), [pools]);
+
+  // A market-cap ranking is only meaningful over the largest tokens, and the
   // title promises at most 100 rows — so the universe is capped and ranked
   // before filters run. Ranks stay attached to the token, not the row number.
   const universe = useMemo(
     () => (tab === "radar" ? tokens : topByMarketCap(tokens, SCREENER_UNIVERSE_LIMIT)),
     [tab, tokens],
   );
-  const ranks = useMemo(() => rankByMarketCap(tokens), [tokens]);
+  const ranks = useMemo(() => rankByMarketCap(universe), [universe]);
 
   useEffect(() => {
     if (!marketQuery.data) return;
@@ -136,10 +164,12 @@ export function DiscoveryView() {
 
   useEffect(() => {
     setPage(1);
-  }, [tab, network, query, minLiquidity, timeframe, sortKey, sortDirection]);
+  }, [tab, network, query, minLiquidity, minVolume, watchedOnly, timeframe, sortKey, sortDirection, pageSize]);
 
+  // One key form for the star state and the tracked-only filter, so an EVM
+  // address that arrives checksummed from DEX Screener still matches its row.
   const watched = useMemo(
-    () => new Set(watchlist.map((entry) => `${entry.network}:${entry.address}`)),
+    () => new Set(watchlist.map((entry) => tokenKey({ network: entry.network, tokenAddress: entry.address }))),
     [watchlist],
   );
 
@@ -151,12 +181,16 @@ export function DiscoveryView() {
         sortKey,
         sortDirection,
         minLiquidity,
+        minVolume,
         network,
+        watched,
+        watchedOnly,
       }),
-    [universe, query, timeframe, sortKey, sortDirection, minLiquidity, network],
+    [universe, query, timeframe, sortKey, sortDirection, minLiquidity, minVolume, network, watched, watchedOnly],
   );
 
-  const paginated = paginate(filtered, page, SCREENER_PAGE_SIZE);
+  const stats = useMemo(() => screenerStats(filtered, timeframe), [filtered, timeframe]);
+  const paginated = paginate(filtered, page, pageSize);
 
   const openToken = (token: MarketToken) => router.push(terminalHref(token));
 
@@ -176,19 +210,39 @@ export function DiscoveryView() {
     });
   };
 
+  const resetFilters = () => {
+    setQuery("");
+    setMinLiquidity(0);
+    setMinVolume(0);
+    setWatchedOnly(false);
+    setNetwork("all");
+  };
+
+  const onExport = () => {
+    const csv = screenerCsv(filtered, { ranks, timeframe });
+    if (downloadCsv(csv)) {
+      toast({
+        title: `Exported ${filtered.length} rows`,
+        description: "Full-precision CSV of the filtered rows from every page, including hidden columns.",
+        variant: "success",
+      });
+    }
+  };
+
   const transportNote =
     marketQuery.transport === "direct"
       ? "Browser transport: the server proxy was unavailable or rate-limited, so the provider is queried directly. Provider rate limits apply."
       : "Server proxy with caching and request de-duplication.";
 
   const showDataState = fetchEnabled;
+  const showTable = showDataState && filtered.length > 0;
 
   return (
     <div className="flex flex-1 flex-col bg-bg">
       <header className="border-b border-border px-3 pb-3 pt-3.5">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div className="min-w-0">
-            <h1 className="text-[21px] font-semibold leading-7 tracking-[-0.02em] text-fg">
+            <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.025em] text-fg">
               {TAB_HEADINGS[tab].title}
             </h1>
             <p className="mt-1 max-w-[760px] text-xs leading-5 text-muted">
@@ -198,7 +252,9 @@ export function DiscoveryView() {
                   {" "}
                   {marketQuery.loading && universe.length === 0
                     ? "Loading live pools…"
-                    : `${universe.length} pools loaded · GeckoTerminal + DEX Screener.`}
+                    : tab === "radar"
+                      ? `${universe.length} new ${universe.length === 1 ? "pool" : "pools"} · ${pools.length} scanned · GeckoTerminal.`
+                      : `${universe.length} ${universe.length === 1 ? "coin" : "coins"} ranked · ${pools.length} ${pools.length === 1 ? "pool" : "pools"} scanned · GeckoTerminal + DEX Screener.`}
                 </span>
               ) : null}
             </p>
@@ -306,6 +362,8 @@ export function DiscoveryView() {
       <div id="discovery-panel" role="tabpanel" className="flex min-h-0 flex-1 flex-col bg-bg">
         {showDataState ? (
           <>
+            {showTable ? <MarketBreadth stats={stats} timeframe={timeframe} /> : null}
+
             <ScannerFilters
               query={query}
               onQueryChange={setQuery}
@@ -315,8 +373,26 @@ export function DiscoveryView() {
               onNetworkChange={setNetwork}
               minLiquidity={minLiquidity}
               onMinLiquidityChange={setMinLiquidity}
+              minVolume={minVolume}
+              onMinVolumeChange={setMinVolume}
+              watchedOnly={watchedOnly}
+              onWatchedOnlyChange={setWatchedOnly}
+              watchedCount={watchlist.length}
               showFilters={showFilters}
               onToggleFilters={() => setShowFilters((visible) => !visible)}
+              onReset={resetFilters}
+              trailing={
+                <ScreenerMenu
+                  pageSize={pageSize}
+                  onPageSize={setPageSize}
+                  hiddenColumns={hiddenColumns}
+                  onToggleColumn={toggleColumn}
+                  onResetColumns={resetColumns}
+                  onExport={onExport}
+                  exportDisabled={filtered.length === 0}
+                  rowCount={filtered.length}
+                />
+              }
             />
 
             {marketQuery.error ? (
@@ -336,9 +412,7 @@ export function DiscoveryView() {
                     ? "Market-data provider rate limit reached."
                     : "Market data request failed."}{" "}
                   <RetryCountdown at={marketQuery.nextRetryAt} />
-                  {tokens.length > 0
-                    ? " Showing the last successful snapshot."
-                    : " No cached snapshot is available yet."}
+                  {pools.length > 0 ? " Showing the last successful snapshot." : " No cached snapshot is available yet."}
                 </span>
                 <Button size="xs" variant="outline" onClick={() => marketQuery.refresh()}>
                   Retry now
@@ -346,7 +420,7 @@ export function DiscoveryView() {
               </div>
             ) : null}
 
-            {warnings.length > 0 && tokens.length > 0 ? (
+            {warnings.length > 0 && pools.length > 0 ? (
               <details className="group border-b border-border bg-panel/60 px-3 py-1 text-2xs text-muted">
                 <summary className="cursor-pointer select-none text-warn">
                   {warnings.length} data-source warning{warnings.length === 1 ? "" : "s"}
@@ -359,14 +433,14 @@ export function DiscoveryView() {
               </details>
             ) : null}
 
-            {marketQuery.loading && tokens.length === 0 ? (
+            {marketQuery.loading && pools.length === 0 ? (
               <div className="flex-1">
                 <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-[11px] text-muted">
                   <Spinner /> Loading live pools…
                 </div>
                 <TableSkeleton rows={12} cols={10} />
               </div>
-            ) : marketQuery.error && tokens.length === 0 ? (
+            ) : marketQuery.error && pools.length === 0 ? (
               <EmptyState
                 icon={WifiOff}
                 title="Market data unavailable"
@@ -385,37 +459,38 @@ export function DiscoveryView() {
                 }
                 className="flex-1"
               />
-            ) : filtered.length === 0 ? (
+            ) : tokens.length === 0 ? (
               <EmptyState
-                icon={SearchX}
-                title={tokens.length === 0 ? "No pools returned" : "No pools match these filters"}
-                description={
-                  tokens.length === 0
-                    ? "The provider returned an empty list for this tab. This can happen during quiet periods or provider degradation."
-                    : "Try a different network, timeframe or minimum liquidity, or clear the text filter. Filters only apply to the loaded provider page."
-                }
+                icon={WifiOff}
+                title="No pools returned"
+                description="The provider returned an empty list for this tab. This can happen during quiet periods or provider degradation. Nothing is invented to fill the table."
                 action={
-                  tokens.length > 0 ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setQuery("");
-                        setMinLiquidity(0);
-                        setNetwork("all");
-                      }}
-                    >
-                      Clear filters
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="sm" onClick={() => marketQuery.refresh()}>
-                      Refresh
-                    </Button>
-                  )
+                  <Button variant="outline" size="sm" onClick={() => marketQuery.refresh()}>
+                    <RefreshCw className="h-3 w-3" /> Refresh
+                  </Button>
                 }
                 className="flex-1"
               />
-            ) : (
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                icon={SearchX}
+                title="No coins match these filters"
+                description={
+                  <>
+                    The screener loaded {tokens.length} {tokens.length === 1 ? "coin" : "coins"} but none pass the
+                    current filters. Clear the active chips, lower the liquidity or volume floor, or widen the network.
+                  </>
+                }
+                action={
+                  <Button variant="outline" size="sm" onClick={resetFilters}>
+                    Clear filters
+                  </Button>
+                }
+                className="flex-1"
+              />
+            ) : null}
+
+            {showTable ? (
               <>
                 <ScannerTable
                   tokens={paginated.items}
@@ -427,23 +502,32 @@ export function DiscoveryView() {
                   onOpen={openToken}
                   watched={watched}
                   onToggleWatch={onToggleWatch}
+                  hiddenColumns={hiddenColumns}
+                  emptyMessage="No coins on this page."
                 />
-                <div className="hidden border-t border-[#1c1c1c] px-3 py-1.5 text-[10px] leading-4 text-faint md:block">
-                  Rank is the market-cap position in the loaded universe and does not change when you sort. Market cap
-                  marked <span className="text-muted">FDV*</span> uses fully-diluted valuation when circulating supply is
+                <div className="hidden border-t border-[#1c1c1c] bg-[#0f0f0f] px-3 py-1.5 text-[10px] leading-4 text-faint md:block">
+                  One row per token: every pool of that token in the loaded page is merged — volume, liquidity and
+                  trade counts are summed, and price and change follow its deepest pool. Rank is the market-cap
+                  position in the loaded universe and does not change when you sort. Market cap marked{" "}
+                  <span className="text-muted">FDV*</span> uses fully-diluted valuation when circulating supply is
                   unavailable. “Traders” counts wallet participation, not holders — the pool APIs publish no holder
                   data. Security flags live on the token page. Simulated orders only.
                 </div>
               </>
-            )}
-            <Pagination
-              page={paginated.page}
-              pages={paginated.pages}
-              start={paginated.start}
-              end={paginated.end}
-              total={filtered.length}
-              onPage={setPage}
-            />
+            ) : null}
+
+            {showDataState && (showTable || filtered.length > 0) ? (
+              <Pagination
+                page={paginated.page}
+                pages={paginated.pages}
+                start={paginated.start}
+                end={paginated.end}
+                total={filtered.length}
+                pageSize={pageSize}
+                onPage={setPage}
+                noun="coins"
+              />
+            ) : null}
           </>
         ) : null}
 

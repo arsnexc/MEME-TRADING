@@ -122,6 +122,8 @@ export const DISCOVERY_TABS: { value: DiscoveryTab; label: string; badge?: strin
 export const SCREENER_UNIVERSE_LIMIT = 100;
 /** Rows per page: dense enough to read as a screener, small enough to render fast. */
 export const SCREENER_PAGE_SIZE = 50;
+/** Page sizes a professional screener offers; validated when preferences load. */
+export const SCREENER_PAGE_SIZES = [25, 50, 100];
 
 export const APP_NAME = "MEMESCOPE";
 export const PAPER_TRADING_DISCLOSURE =
